@@ -62,6 +62,9 @@ static class Program
         // A normal launch opens the window. Restarts (--after-pid) and background launches (e.g. at sign-in) stay in the tray.
         bool openWindow = afterPid == 0 && !background;
 
+        // Clear out files a save left behind if it was cut short (more than an hour old, so nothing in progress is touched).
+        ThreadPool.QueueUserWorkItem(_ => TempSweep.Run(settings.OutDir));
+
         ApplicationConfiguration.Initialize();
         Application.Run(new TrayApp(settings, startPaused, openWindow));
         return 0;

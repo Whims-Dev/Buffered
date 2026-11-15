@@ -89,19 +89,54 @@ sealed class TrayApp : ApplicationContext
                 _engine.Start();
                 _engine.NeedsRestart += reason => { if (!_paused && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
                 _engine.VoicePhrase += _ => { if (!_paused && !_quit) _sync.BeginInvoke(SaveClip); }; // "clip that" does the same as the hotkey
-                _error = null;
+                _error = null; _starting = false; _startAttempt = 0;
                 _tray.Icon = _iconOn;
                 _status.Text = "Recording";
             }
             catch (Exception ex)
             {
                 _engine?.Dispose(); _engine = null;
-                _error = ex.Message;
+                LogStartFailure(ex);
                 _tray.Icon = _iconBusy;
+
+                // Right after Windows starts, the display and graphics may not be ready yet (this recorder is started at sign-in), so
+                // try again a few times before giving up.
+                if (_startAttempt < RetryDelays.Length && !_quit)
+                {
+                    int wait = RetryDelays[_startAttempt++];
+                    _error = null; _starting = true;
+                    _status.Text = "Starting…";
+                    _tray.Text = "Buffered · starting…";
+                    Task.Delay(TimeSpan.FromSeconds(wait)).ContinueWith(_ => _sync.BeginInvoke(() =>
+                    {
+                        if (!_quit && !_paused && _engine is null) StartEngine();
+                    }));
+                    return;
+                }
+                _starting = false;
+                _error = ex.Message;
                 _status.Text = "Couldn't start recording";
                 _tray.Text = "Buffered · couldn't start recording"; // the window shows the reason; no Windows notification
             }
         }
+    }
+
+    private static readonly int[] RetryDelays = { 4, 8, 12, 20, 30, 45 };   // seconds; about two minutes in all
+    private int _startAttempt;
+    private bool _starting;
+
+    /// <summary>Keeps the reason a start failed (with where it came from) in a small file, so a problem like this can be traced afterwards.</summary>
+    private void LogStartFailure(Exception ex)
+    {
+        try
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered");
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, "recorder.log");
+            if (File.Exists(file) && new FileInfo(file).Length > 200_000) File.Delete(file);
+            File.AppendAllText(file, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} start failed (attempt {_startAttempt + 1}, up {TimeSpan.FromMilliseconds(Environment.TickCount64):h\\:mm\\:ss} since boot):{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     /// <summary>
@@ -249,18 +284,35 @@ sealed class TrayApp : ApplicationContext
         {
             try
             {
-                using var pipe = new NamedPipeServerStream(Ipc.PipeName, PipeDirection.InOut, 4,
+                var pipe = new NamedPipeServerStream(Ipc.PipeName, PipeDirection.InOut, 4,
                     PipeTransmissionMode.Byte, PipeOptions.CurrentUserOnly);
-                pipe.WaitForConnection();
-                using var reader = new StreamReader(pipe);
-                using var writer = new StreamWriter(pipe) { AutoFlush = true };
+                try { pipe.WaitForConnection(); } catch { pipe.Dispose(); throw; }
+                var reader = new StreamReader(pipe);
+                var writer = new StreamWriter(pipe) { AutoFlush = true };
+                string? command;
+                try { command = reader.ReadLine(); } catch { pipe.Dispose(); throw; }
+                if (command == "save")
+                {
+                    // A save can take a while (a slow or network drive), so it runs on its own and the window's status polls still get answers.
+                    _ = Task.Run(() =>
+                    {
+                        try
+                        {
+                            string r; try { r = SaveFromPipe(); } catch (Exception ex) { r = "error: " + ex.Message; }
+                            writer.WriteLine(r);
+                        }
+                        catch { /* the window went away */ }
+                        finally { pipe.Dispose(); }
+                    });
+                    continue;
+                }
+                using var _p = pipe;
                 string reply;
                 try
                 {
-                    reply = reader.ReadLine() switch
+                    reply = command switch
                     {
                         "status" => JsonSerializer.Serialize(BuildStatus(), Ipc.Json),
-                        "save" => SaveFromPipe(),
                         "reload" => ReloadFromPipe(),
                         "soft" => SoftFromPipe(),
                         "pause" => PauseFromPipe(true),
@@ -281,7 +333,7 @@ sealed class TrayApp : ApplicationContext
     {
         if (_saving) return "error: a save is already in progress";
         _saving = true;
-        try { return DoSave()!; } finally { _saving = false; }
+        try { return DoSave(() => { if (_settings.SaveSound) Sounds.PlaySaved(); })!; } finally { _saving = false; }
     }
 
     private string ReloadFromPipe() { RelaunchSoon(_paused); return "ok"; }
@@ -334,7 +386,7 @@ sealed class TrayApp : ApplicationContext
         if ((now - _vramAt).TotalSeconds >= 3) { _vram = Telemetry.OwnVramMb(); _vramAt = now; }
 
         return e is null
-            ? new RecorderStatus(false, 0, _settings.BufferSeconds, 0, _vram, _cpuPct, 0, 0, 0, "", _error, _paused)
+            ? new RecorderStatus(false, 0, _settings.BufferSeconds, 0, _vram, _cpuPct, 0, 0, 0, "", _error, _paused, Starting: _starting)
             : new RecorderStatus(true, e.BufferedSeconds, e.BufferSeconds, (e.BufferedBytes + e.AudioBytes) / 1048576.0, _vram, _cpuPct,
                                  e.OutputWidth, e.OutputHeight, e.Fps, e.Monitor?.ToString() ?? "", null, false, e.AudioDescription, e.GameLevel, e.MicLevel, e.SourceName,
                                  !_settings.VoiceClip ? "" : e.VoiceListening ? $"Listening on {e.MicName}" : e.VoiceError ?? "Starting…", e.VoiceLastHeard, e.VoiceLive);

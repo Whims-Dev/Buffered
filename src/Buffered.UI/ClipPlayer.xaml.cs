@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.VisualBasic.FileIO;
@@ -61,15 +62,16 @@ public partial class ClipPlayer : UserControl
     private bool _loadingAudio;
     private (double Pos, bool Playing)? _resume;  // where to carry on after the source is swapped for a new preview
 
-    // One row per track of the companion file (Game, a program such as Discord, Mic): a volume slider, and for programs an "in the mix" box.
+    // One row per track of the companion file (Game, a program such as Discord, Mic): a volume slider and a mute button.
     private List<StemTrack> _tracks = new();
     private readonly List<Slider> _sliders = new();
     private readonly List<TextBlock> _dbTexts = new();
-    private readonly List<CheckBox?> _mixBoxes = new();
+    private readonly List<ToggleButton> _mutes = new();          // checked = muted: left out of the clip's sound
+    private readonly List<UIElement[]> _faded = new();           // what dims when a track is muted
     private static readonly string[] TrackColors = { "#7FA6FF", "#9B8CF0", "#5ED0A0", "#F0A56C", "#E07FB0" };
 
     private double[] TrackDbs => _sliders.Select(s => s.Value).ToArray();
-    private bool[] TrackInMix => _tracks.Select((t, i) => _mixBoxes[i] is { } box ? box.IsChecked == true : t.InMix).ToArray();
+    private bool[] TrackInMix => _tracks.Select((t, i) => i < _mutes.Count ? _mutes[i].IsChecked != true : t.InMix).ToArray();
     private bool AudioChanged => _stems is not null && _tracks.Count > 0 && _sliders.Count == _tracks.Count &&
         (TrackDbs.Any(d => Math.Abs(d) > 0.05) || Enumerable.Range(0, _tracks.Count).Any(i => TrackInMix[i] != _tracks[i].InMix));
     private AudioEdit? CurrentEdit => AudioChanged ? new AudioEdit(_tracks.Select(t => t.Name).ToList(), TrackDbs, TrackInMix) : null;
@@ -80,7 +82,7 @@ public partial class ClipPlayer : UserControl
         var tracks = await Media.ReadStemTracksAsync(stems);
         if (id != _openId || tracks.Count == 0) return;
         _tracks = tracks;
-        AudioRows.Children.Clear(); _sliders.Clear(); _dbTexts.Clear(); _mixBoxes.Clear();
+        AudioRows.Children.Clear(); _sliders.Clear(); _dbTexts.Clear(); _mutes.Clear(); _faded.Clear();
         int app = 0;
         for (int i = 0; i < tracks.Count; i++)
         {
@@ -94,24 +96,33 @@ public partial class ClipPlayer : UserControl
                     BorderBrush = (Brush)FindResource("ControlStrokeColorDefaultBrush"), VerticalAlignment = VerticalAlignment.Center,
                     Child = new TextBlock { Text = "own track", FontSize = 10, Opacity = 0.8 } });
             var db = new TextBlock { FontSize = 12, Opacity = 0.7, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            var head = new Grid { Margin = new Thickness(0, i == 0 ? 8 : 12, 0, 0) };
-            head.Children.Add(name); head.Children.Add(db);
-            int index = i;
-            var slider = new Slider { Minimum = -20, Maximum = 20, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 4, 0, 0) };
+            var head = new Grid { Margin = new Thickness(0, i == 0 ? 6 : 10, 0, 0) };
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            db.Margin = new Thickness(8, 0, 6, 0);
+            Grid.SetColumn(db, 1);
+
+            // The speaker button leaves the track out of the clip's sound (its recording stays in the companion file).
+            var mute = new ToggleButton
+            {
+                Width = 28, Height = 28, Padding = new Thickness(0), MinHeight = 0, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 14, Cursor = System.Windows.Input.Cursors.Hand,
+                Content = "", IsChecked = !t.InMix, VerticalAlignment = VerticalAlignment.Center,
+            };
+            System.Windows.Automation.AutomationProperties.SetName(mute, $"Mute {t.Name}");
+            mute.ToolTip = $"Mute {t.Name}";
+            Grid.SetColumn(mute, 2);
+            head.Children.Add(name); head.Children.Add(db); head.Children.Add(mute);
+
+            var slider = new Slider { Minimum = -20, Maximum = 20, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 2, 0, 0) };
             System.Windows.Automation.AutomationProperties.SetName(slider, $"{t.Name} volume in decibels");
             slider.ValueChanged += (_, _) => { if (!_loadingAudio) AudioEdited(); };
+            // Checked/Unchecked rather than Click, so assistive tools that toggle the button are handled too.
+            mute.Checked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
+            mute.Unchecked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
             AudioRows.Children.Add(head); AudioRows.Children.Add(slider);
-            _sliders.Add(slider); _dbTexts.Add(db);
-
-            CheckBox? mixBox = null;
-            if (t.IsApp)
-            {
-                mixBox = new CheckBox { Content = "Include in the mix", IsChecked = t.InMix, Margin = new Thickness(0, 6, 0, 0), FontSize = 12 };
-                mixBox.Checked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
-                mixBox.Unchecked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
-                AudioRows.Children.Add(mixBox);
-            }
-            _mixBoxes.Add(mixBox);
+            _sliders.Add(slider); _dbTexts.Add(db); _mutes.Add(mute); _faded.Add(new UIElement[] { name, db, slider });
         }
         UpdateAudioText();
         AudioCard.Visibility = Visibility.Visible;
@@ -122,7 +133,7 @@ public partial class ClipPlayer : UserControl
     {
         _loadingAudio = true;
         foreach (var s in _sliders) s.Value = 0;
-        for (int i = 0; i < _mixBoxes.Count; i++) if (_mixBoxes[i] is { } box) box.IsChecked = _tracks[i].InMix;
+        for (int i = 0; i < _mutes.Count; i++) _mutes[i].IsChecked = !_tracks[i].InMix;
         _loadingAudio = false;
     }
 
@@ -149,7 +160,7 @@ public partial class ClipPlayer : UserControl
         // Clips saved with this version have a companion file; with it the game and microphone volumes can be changed here.
         string stems = ClipNames.StemsPath(clip.Path);
         _stems = File.Exists(stems) ? stems : null;
-        _tracks = new(); _sliders.Clear(); _dbTexts.Clear(); _mixBoxes.Clear(); AudioRows.Children.Clear();
+        _tracks = new(); _sliders.Clear(); _dbTexts.Clear(); _mutes.Clear(); _faded.Clear(); AudioRows.Children.Clear();
         _audioTimer.Stop(); _resume = null;
         AudioCard.Visibility = Visibility.Collapsed;   // shown once the companion file's tracks are known
 
@@ -226,11 +237,23 @@ public partial class ClipPlayer : UserControl
 
     private void UpdateAudioText()
     {
-        for (int i = 0; i < _dbTexts.Count; i++) _dbTexts[i].Text = DbText(_sliders[i].Value);
+        for (int i = 0; i < _dbTexts.Count; i++)
+        {
+            bool muted = i < _mutes.Count && _mutes[i].IsChecked == true;
+            _dbTexts[i].Text = muted ? "Muted" : DbText(_sliders[i].Value);
+            if (i < _mutes.Count)
+            {
+                _mutes[i].Content = muted ? "" : "";
+                _mutes[i].Foreground = muted ? new SolidColorBrush(Color.FromRgb(0xF0, 0xA0, 0xA0)) : (Brush)FindResource("TextFillColorPrimaryBrush");
+                System.Windows.Automation.AutomationProperties.SetName(_mutes[i], $"{(muted ? "Unmute" : "Mute")} {_tracks[i].Name}");
+                _mutes[i].ToolTip = $"{(muted ? "Unmute" : "Mute")} {_tracks[i].Name}";
+            }
+            if (i < _faded.Count) foreach (var el in _faded[i]) el.Opacity = muted ? 0.4 : (el == _dbTexts[i] ? 0.7 : 1);
+        }
         if (AudioHint is null) return;
         AudioHint.Text = AudioChanged
-            ? "Playing a preview with these volumes. Save copy or Replace original to keep them."
-            : "Drag a slider to change how loud it is. The video keeps playing so you can hear the result.";
+            ? "Playing a preview with these changes. Save copy or Replace original to keep them."
+            : "Drag a slider to change how loud it is. The speaker button mutes a track in the saved clip.";
     }
     /// <summary>Stops playback and releases the file, so it can be moved or deleted.</summary>
     public void Release()
@@ -376,6 +399,7 @@ public partial class ClipPlayer : UserControl
     {
         // Typing in a time box must not trigger the player's shortcuts.
         if (e.OriginalSource is TextBox) return;
+        if (ShareScrim.Visibility == Visibility.Visible) return;   // the share window has the keyboard
 
         double step = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 1 : 5;
         switch (e.Key)
@@ -420,7 +444,7 @@ public partial class ClipPlayer : UserControl
             for (int i = 0; i < _tracks.Count; i++)
             {
                 if (Math.Abs(_sliders[i].Value) > 0.05) parts.Add($"{_tracks[i].Name} {DbText(_sliders[i].Value)}");
-                if (TrackInMix[i] != _tracks[i].InMix) parts.Add($"{_tracks[i].Name} {(TrackInMix[i] ? "in" : "out of")} the mix");
+                if (TrackInMix[i] != _tracks[i].InMix) parts.Add($"{_tracks[i].Name} {(TrackInMix[i] ? "unmuted" : "muted")}");
             }
             KeepText.Inlines.Add(string.Join(", ", parts));
         }

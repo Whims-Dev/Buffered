@@ -71,9 +71,12 @@ internal sealed class ReplayBuffer
             if (k > start) start = k;
         }
 
-        Directory.CreateDirectory(folder);
+        // Everything is built on the local disk and only the finished clip is copied to the clips folder, which may be a network
+        // drive or a slow disk: writing tens of MB there first would delay the save sound and the whole save.
+        string work = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered", "tmp");
+        Directory.CreateDirectory(work);
         string stamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-        string raw = Path.Combine(folder, $".{stamp}.h264");
+        string raw = Path.Combine(work, $".{stamp}.h264");
         string mp4 = Path.Combine(folder, $"{ClipNames.Sanitize(label)}_{stamp}.mp4");
 
         using (var fs = new FileStream(raw, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
@@ -85,7 +88,7 @@ internal sealed class ReplayBuffer
         if (tracks is not null)
             for (int t = 0; t < tracks.Count; t++)
             {
-                string pcm = Path.Combine(folder, $".{stamp}.{t}.pcm");
+                string pcm = Path.Combine(work, $".{stamp}.{t}.pcm");
                 using (var pf = new FileStream(pcm, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
                     tracks[t].ExtractTo(pf, videoStartHns);
                 pcmFiles.Add((pcm, tracks[t]));
@@ -115,7 +118,8 @@ internal sealed class ReplayBuffer
         // Every source is also written, one stream each, to a hidden companion file. It lets the editor change how loud each one is
         // in a finished clip, while the clip itself keeps a single audio track that every player plays.
         bool stems = n >= 2;
-        string stemsPath = ClipNames.StemsPath(mp4);
+        string stemsPath = ClipNames.StemsPath(mp4);                       // where it ends up
+        string stemsWork = Path.Combine(work, $".{stamp}.stems.mka");      // where it is built
 
         // The volume set in Settings is applied once, here; the same adjusted audio goes into the mix and the stems.
         string Db(double v) => v.ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture) + "dB";
@@ -158,7 +162,7 @@ internal sealed class ReplayBuffer
         }
         // Written under a hidden temporary name and renamed when complete, so the clip list never shows a half-written file
         // (until ffmpeg finishes, an MP4 with +faststart has no index and can't be read).
-        string partial = Path.Combine(folder, $".{stamp}.partial.mp4");
+        string partial = Path.Combine(work, $".{stamp}.partial.mp4");
         // No edit list: Windows' media engine (the editor) ignores them, so audio that depends on one plays late. See AacDelayFix.
         args.AddRange(new[] { "-use_editlist", "0", "-movflags", "+faststart", partial });
 
@@ -172,7 +176,7 @@ internal sealed class ReplayBuffer
                 string name = pcmFiles[i].Track.Name;
                 args.AddRange(new[] { $"-metadata:s:a:{i}", $"title={name}", $"-metadata:s:a:{i}", $"handler_name={name}", $"-metadata:s:a:{i}", $"inmix={(inMix[i] ? 1 : 0)}" });
             }
-            args.AddRange(new[] { "-f", "matroska", stemsPath });
+            args.AddRange(new[] { "-f", "matroska", stemsWork });
         }
         var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
@@ -181,16 +185,34 @@ internal sealed class ReplayBuffer
         try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
         string err = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
-        File.Delete(raw);
-        foreach (var (path, _) in pcmFiles) File.Delete(path);
+        try { File.Delete(raw); } catch { }
+        foreach (var (path, _) in pcmFiles) { try { File.Delete(path); } catch { } }
         if (proc.ExitCode != 0)
         {
-            try { if (File.Exists(stemsPath)) File.Delete(stemsPath); } catch { }
+            try { if (File.Exists(stemsWork)) File.Delete(stemsWork); } catch { }
             try { if (File.Exists(partial)) File.Delete(partial); } catch { }
             throw new InvalidOperationException($"ffmpeg failed: {err}");
         }
-        if (stems) { try { File.SetAttributes(stemsPath, FileAttributes.Hidden); } catch { } } // keep the companion out of the way
-        File.Move(partial, mp4, overwrite: true); // now the clip appears, complete
+
+        // Now copy the finished files to the clips folder. The clip is copied under a hidden name and renamed last, so it never
+        // shows up half-copied. If the folder can't be reached the finished clip stays in the local folder instead of being lost.
+        string landing = Path.Combine(folder, $".{stamp}.partial.mp4");
+        try
+        {
+            Directory.CreateDirectory(folder);
+            if (stems)
+            {
+                File.Move(stemsWork, stemsPath, overwrite: true);
+                try { File.SetAttributes(stemsPath, FileAttributes.Hidden); } catch { } // keep the companion out of the way
+            }
+            File.Move(partial, landing, overwrite: true);
+            File.Move(landing, mp4, overwrite: true); // now the clip appears, complete
+        }
+        catch (Exception ex)
+        {
+            try { if (File.Exists(landing)) File.Delete(landing); } catch { }
+            throw new InvalidOperationException($"Couldn't write to {folder}: {ex.Message} The clip was kept at {partial}");
+        }
         return mp4;
     }
 }

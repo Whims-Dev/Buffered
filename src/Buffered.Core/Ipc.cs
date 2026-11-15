@@ -8,7 +8,7 @@ public sealed record RecorderStatus(
     bool Recording, double BufferedSeconds, int BufferSeconds, double BufferedMb,
     long VramMb, double CpuPercent, int Width, int Height, int Fps, string Monitor, string? Error, bool Paused = false,
     string Audio = "", double GameLevel = 0, double MicLevel = 0, string Source = "Monitor",
-    string Voice = "", string VoiceHeard = "", string VoiceLive = "");
+    string Voice = "", string VoiceHeard = "", string VoiceLive = "", bool Starting = false);
 
 public static class Ipc
 {
@@ -40,7 +40,7 @@ public static class Ipc
     /// <summary>Asks the recorder to save a clip. Returns the file path, or null on failure.</summary>
     public static async Task<string?> SaveClipAsync()
     {
-        var line = await SendAsync("save", 15000);
+        var line = await SendAsync("save", 120000);   // a slow or network drive can take a while
         return line is { Length: > 0 } && !line.StartsWith("error:") ? line : null;
     }
 

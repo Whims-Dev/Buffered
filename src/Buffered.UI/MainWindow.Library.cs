@@ -443,6 +443,7 @@ public partial class MainWindow
         var sub = MoveMenu(items, at);
         foreach (var it in sub.Items.Cast<Control>().ToList()) { sub.Items.Remove(it); move.Items.Add(it); }
         menu.Items.Add(move);
+        if (items.Count == 1) Add("Share…", () => { if (File.Exists(c.Path)) _ = Player.ShareClipAsync(c); });
         Add(items.Count == 1 ? "Copy" : $"Copy {items.Count} clips", () => CopyToClipboard(items));
         if (items.Count == 1) Add("Show in folder", () => Process.Start("explorer.exe", $"/select,\"{c.Path}\""));
         menu.Items.Add(new Separator());

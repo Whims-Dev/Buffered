@@ -37,6 +37,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         DataContext = this;
         BuildSettingsLayout();
+        Player.MoveShareTo((Grid)Dialogs.Parent, Dialogs);
 
         if (startedRecorder)
         {
@@ -280,7 +281,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else if (!s.Recording)
             {
-                SetOffline(s.Error is { } err ? $"Couldn't start: {err}" : "Recording is off", false);
+                SetOffline(s.Starting ? "Starting… waiting for Windows to be ready" : s.Error is { } err ? $"Couldn't start: {err}" : "Recording is off", false);
             }
             else
             {

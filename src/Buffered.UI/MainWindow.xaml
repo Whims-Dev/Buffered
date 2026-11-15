@@ -723,8 +723,7 @@
             </Grid>
 
             <!-- Player and trimmer: covers the content area while a clip is open -->
-            <local:ClipPlayer x:Name="Player" Visibility="Collapsed"
-                              Background="{Binding Background, RelativeSource={RelativeSource AncestorType=Window}}"/>
+            <local:ClipPlayer x:Name="Player" Visibility="Collapsed"/>
         </Grid>
 
         <!-- Status bar -->
