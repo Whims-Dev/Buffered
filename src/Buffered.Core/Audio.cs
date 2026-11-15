@@ -303,30 +303,42 @@ internal sealed class AudioTrack : IDisposable
         }
     }
 
-    /// <summary>Returns the PCM from the given timeline moment onward, padded with silence if the track began later.</summary>
-    public byte[] Extract(long fromHns)
+    /// <summary>
+    /// Writes the PCM from the given timeline moment onward to a stream, padded with silence if the track began later.
+    /// Only a list of the chunks is taken under the lock (they are never modified once added); the copying happens outside it,
+    /// so saving neither stalls audio capture nor builds a second copy of the whole buffer in memory.
+    /// </summary>
+    public void ExtractTo(Stream output, long fromHns)
     {
+        List<byte[]> chunks;
+        long skip, lead;
         lock (_lock)
         {
             long startFrame = (fromHns - _startHns) * Rate / 10_000_000L;
-            long lead = 0;
+            lead = 0;
             if (startFrame < _firstFrameIndex)
             {
                 lead = Math.Max(0, _firstFrameIndex - startFrame);
                 startFrame = _firstFrameIndex;
             }
-            long skip = startFrame - _firstFrameIndex;
+            skip = startFrame - _firstFrameIndex;
+            chunks = new List<byte[]>(_chunks);
+        }
 
-            using var ms = new MemoryStream();
-            if (lead > 0) ms.Write(new byte[Math.Min(lead, 10L * Rate) * _frameBytes]);
-            foreach (var chunk in _chunks)
-            {
-                long f = chunk.Length / _frameBytes;
-                if (skip >= f) { skip -= f; continue; }
-                ms.Write(chunk, (int)(skip * _frameBytes), chunk.Length - (int)(skip * _frameBytes));
-                skip = 0;
-            }
-            return ms.ToArray();
+        long silence = Math.Min(lead, 10L * Rate) * _frameBytes;
+        var zeros = new byte[(int)Math.Min(silence, 1 << 16)];
+        while (silence > 0)
+        {
+            int n = (int)Math.Min(silence, zeros.Length);
+            output.Write(zeros, 0, n);
+            silence -= n;
+        }
+        foreach (var chunk in chunks)
+        {
+            long f = chunk.Length / _frameBytes;
+            if (skip >= f) { skip -= f; continue; }
+            output.Write(chunk, (int)(skip * _frameBytes), chunk.Length - (int)(skip * _frameBytes));
+            skip = 0;
         }
     }
 

@@ -79,7 +79,8 @@ internal sealed class ReplayBuffer
             for (int t = 0; t < tracks.Count; t++)
             {
                 string pcm = Path.Combine(folder, $".{stamp}.{t}.pcm");
-                File.WriteAllBytes(pcm, tracks[t].Extract(videoStartHns));
+                using (var pf = new FileStream(pcm, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+                    tracks[t].ExtractTo(pf, videoStartHns);
                 pcmFiles.Add((pcm, tracks[t]));
             }
 
@@ -159,6 +160,8 @@ internal sealed class ReplayBuffer
         var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Could not start ffmpeg.");
+        // A save should never compete with a game for the CPU; it only has to finish in a few seconds.
+        try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
         string err = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
         File.Delete(raw);

@@ -219,14 +219,38 @@ internal static class Media
         catch { }
     }
 
+    /// <summary>
+    /// A clip's length from ffprobe. The answer is remembered on disk (keyed by path, size and modified time, like thumbnails),
+    /// so a library is only probed once instead of at every launch.
+    /// </summary>
     public static async Task<double?> GetDurationSecondsAsync(string clip)
     {
+        string? cache = null;
+        bool cacheable = !clip.StartsWith(PreviewDir, StringComparison.OrdinalIgnoreCase);
+        if (cacheable)
+        {
+            try
+            {
+                var fi = new FileInfo(clip);
+                string key = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(
+                    System.Text.Encoding.UTF8.GetBytes($"{clip}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}")))[..16];
+                cache = System.IO.Path.Combine(CacheDir, key + ".len");
+                if (File.Exists(cache) && double.TryParse(File.ReadAllText(cache), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var known)) return known;
+            }
+            catch { cache = null; }
+        }
+
         await Gate.WaitAsync();
         try
         {
             var (code, output) = await RunAsync(Tools.Ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", clip);
-            return code == 0 && double.TryParse(output.Trim(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var s) ? s : null;
+            if (code == 0 && double.TryParse(output.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s))
+            {
+                if (cache is not null) { try { Directory.CreateDirectory(CacheDir); File.WriteAllText(cache, s.ToString("R", System.Globalization.CultureInfo.InvariantCulture)); } catch { } }
+                return s;
+            }
+            return null;
         }
         finally { Gate.Release(); }
     }
@@ -238,6 +262,7 @@ internal static class Media
             var psi = new ProcessStartInfo(exe) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
+            try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { } // thumbnails and lengths must never slow a game down
             var stdout = p.StandardOutput.ReadToEndAsync();
             _ = p.StandardError.ReadToEndAsync();
             await p.WaitForExitAsync();

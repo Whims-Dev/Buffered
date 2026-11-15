@@ -33,7 +33,9 @@ internal sealed class ScreenCapture : IDisposable
     private readonly IntPtr _window;
 
     /// <summary>Captures a monitor, or, when a window handle is given, just that window.</summary>
-    public ScreenCapture(Gpu gpu, IntPtr monitor, IntPtr window = default) { _gpu = gpu; _monitor = monitor; _window = window; }
+    public ScreenCapture(Gpu gpu, IntPtr monitor, IntPtr window = default, int targetFps = 0) { _gpu = gpu; _monitor = monitor; _window = window; _targetFps = targetFps; }
+
+    private readonly int _targetFps;
 
     /// <summary>Raised when the captured window or display goes away (for example the game is closed).</summary>
     public event Action? SourceClosed;
@@ -72,7 +74,11 @@ internal sealed class ScreenCapture : IDisposable
         _session = _pool.CreateCaptureSession(_item);
         try { _session.IsCursorCaptureEnabled = true; } catch { }
         try { _session.IsBorderRequired = false; } catch { }
-        try { _session.MinUpdateInterval = TimeSpan.FromMilliseconds(1000.0 / 144); } catch { }
+        // The encoder samples the newest frame at a fixed rate, so frames arriving faster than that are copied for nothing
+        // (a 144 Hz display against 60 fps recording wastes more than half of them). Capture at 1.5x the recording rate:
+        // always a fresh frame to pick from, without sampling and delivery rates lining up exactly.
+        double captureFps = _targetFps > 0 ? _targetFps * 1.5 : 144;
+        try { _session.MinUpdateInterval = TimeSpan.FromMilliseconds(1000.0 / captureFps); } catch { }
         _session.StartCapture();
     }
 

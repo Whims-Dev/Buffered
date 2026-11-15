@@ -132,6 +132,8 @@ internal sealed class FramePipeline : IDisposable
             double wait;
             while ((wait = due - sw.Elapsed.TotalMilliseconds) > 0)
             {
+                // Sleep while there is time to spare, spin for the last couple of milliseconds. A high-resolution waitable timer
+                // was tried here and measured slightly worse (about 10% vs 9% of a core), so this stays as it was.
                 if (wait > 2) Thread.Sleep(1); else Thread.SpinWait(50);
                 if (!_running) return;
             }

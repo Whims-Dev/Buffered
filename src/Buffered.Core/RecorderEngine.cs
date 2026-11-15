@@ -16,8 +16,7 @@ public sealed class RecorderEngine : IDisposable
 
     public RecorderEngine(Settings settings) => _s = settings;
 
-    public string GpuName => _gpu?.AdapterName ?? "?";
-    public string EncoderName => _enc?.Name ?? "?";
+    public string GpuName => _gpu?.AdapterName ?? "?";    public string EncoderName => _enc?.Name ?? "?";
     public int OutputWidth { get; private set; }
     public int OutputHeight { get; private set; }
     public int Fps => _fps;
@@ -65,7 +64,7 @@ public sealed class RecorderEngine : IDisposable
         if (game is not null)
         {
             if (_s.KeepWindowVisible) GameWindow.EnsureVisible(game.Handle);
-            _cap = new ScreenCapture(_gpu, Monitor.Handle, game.Handle);
+            _cap = new ScreenCapture(_gpu, Monitor.Handle, game.Handle, _fps);
             bool ok;
             try { _cap.Start(); ok = _cap.FirstFrame.Wait(5000); }
             catch { ok = false; }
@@ -80,7 +79,7 @@ public sealed class RecorderEngine : IDisposable
         }
         if (_cap is null)
         {
-            _cap = new ScreenCapture(_gpu, Monitor.Handle);
+            _cap = new ScreenCapture(_gpu, Monitor.Handle, targetFps: _fps);
             _cap.Start();
             if (!_cap.FirstFrame.Wait(5000)) throw new InvalidOperationException("The screen capture produced no frames.");
         }
@@ -211,18 +210,29 @@ public sealed class RecorderEngine : IDisposable
 public static class Telemetry
 {
     /// <summary>This process's dedicated VRAM as reported by the Windows GPU performance counters (same source as Task Manager).</summary>
+    // Listing every GPU process's counters is slow, so the ones for this process are found once and reused.
+    private static List<System.Diagnostics.PerformanceCounter>? _vramCounters;
+    private static DateTime _vramFoundAt;
+
     public static long OwnVramMb()
     {
         try
         {
-            var cat = new System.Diagnostics.PerformanceCounterCategory("GPU Process Memory");
+            var now = DateTime.UtcNow;
+            bool stale = _vramCounters is null || (now - _vramFoundAt).TotalSeconds > (_vramCounters!.Count == 0 ? 10 : 120);
+            if (stale)
+            {
+                if (_vramCounters is not null) foreach (var old in _vramCounters) old.Dispose();
+                var cat = new System.Diagnostics.PerformanceCounterCategory("GPU Process Memory");
+                string prefix = $"pid_{Environment.ProcessId}_";
+                _vramCounters = cat.GetInstanceNames().Where(n => n.StartsWith(prefix))
+                    .Select(n => new System.Diagnostics.PerformanceCounter("GPU Process Memory", "Dedicated Usage", n, true)).ToList();
+                _vramFoundAt = now;
+            }
             long total = 0;
-            string prefix = $"pid_{Environment.ProcessId}_";
-            foreach (var name in cat.GetInstanceNames().Where(n => n.StartsWith(prefix)))
-                using (var c = new System.Diagnostics.PerformanceCounter("GPU Process Memory", "Dedicated Usage", name, true))
-                    total += c.RawValue;
+            foreach (var c in _vramCounters!) total += c.RawValue;
             return total / 1048576;
         }
-        catch { return -1; }
+        catch { _vramCounters = null; return -1; }
     }
 }
