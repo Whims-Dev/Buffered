@@ -98,18 +98,34 @@ public sealed class RecorderEngine : IDisposable
         }
     }
 
+    /// <summary>The settings recording actually uses: the defaults plus the running game's own video settings, if it has any.</summary>
+    private Settings _eff = null!;
+    private string? _gameName;
+    /// <summary>The running game's lower-case name if it has settings of its own, otherwise empty. The tray restarts recording when this changes.</summary>
+    public string ProfileKey { get; private set; } = "";
+    /// <summary>The configured game that was running when recording started, or null.</summary>
+    public string? GameName => _gameName;
+    /// <summary>The buffer length actually in use (a running game can have its own).</summary>
+    public int BufferSeconds => _eff?.BufferSeconds ?? _s.BufferSeconds;
+
     public void Start()
     {
         Monitor = Monitors.Resolve(_s.MonitorDevice);
-        _fps = Math.Min(_s.Fps, Math.Max(Monitor.RefreshHz, 30));
+
+        // Which game is running decides which settings recording uses, so find it first.
+        var game = GameWindow.Find(_s);
+        var profile = _s.ProfileFor(game?.ProcessName);
+        _gameName = game?.ProcessName;
+        ProfileKey = profile is { IsEdited: true } ? Settings.GameKey(game!.ProcessName) : "";
+        _eff = _s.WithProfile(profile);
+        _fps = Math.Min(_eff.Fps, Math.Max(Monitor.RefreshHz, 30));
 
         var timeline = _timeline = new Timeline();
         _gpu = new Gpu();
 
-        // A configured game's window is recorded instead of the whole monitor. A minimized window delivers no frames at all,
-        // so it is restored (behind the other windows, without taking focus) unless that is turned off.
-        var game = GameWindow.Find(_s);
-        if (game is not null)
+        // A configured game's window is recorded instead of the whole monitor (unless that game is set to keep recording the monitor).
+        // A minimized window delivers no frames at all, so it is restored (behind the other windows, without taking focus) unless that is turned off.
+        if (game is not null && (profile?.WindowOnly ?? true))
         {
             if (_s.KeepWindowVisible) GameWindow.EnsureVisible(game.Handle);
             _cap = new ScreenCapture(_gpu, Monitor.Handle, game.Handle, _fps);
@@ -135,11 +151,11 @@ public sealed class RecorderEngine : IDisposable
         _cap.SizeChanged += () => NeedsRestart?.Invoke("the recorded window was resized");
 
         // Keep the source's aspect ratio (a monitor or a window); encoders want even dimensions.
-        OutputHeight = Math.Min(_s.Height, _cap.Height) & ~1;
+        OutputHeight = Math.Min(_eff.Height, _cap.Height) & ~1;
         OutputWidth = ((int)Math.Round(OutputHeight * (double)_cap.Width / _cap.Height / 2.0)) * 2;
 
-        _buffer = new ReplayBuffer(_s.BufferSeconds);
-        _enc = new HwEncoder(_gpu, OutputWidth, OutputHeight, _fps, _s.EffectiveBitrateKbps);
+        _buffer = new ReplayBuffer(_eff.BufferSeconds);
+        _enc = new HwEncoder(_gpu, OutputWidth, OutputHeight, _fps, _eff.EffectiveBitrateKbps);
         _enc.PacketReady += _buffer.Add;
         _enc.Start();
 
@@ -150,22 +166,54 @@ public sealed class RecorderEngine : IDisposable
         _pipe.Start();
     }
 
+    /// <summary>The program recorded on its own track while it is running (its process name), or null. The tray restarts recording when this changes.</summary>
+    public string? AppName { get; private set; }
+    private uint _appPid;
+    public string AppKey => AppName is null ? "" : $"{Settings.GameKey(AppName)}:{_appPid}";
+
+    /// <summary>The first configured program that is running, and the process at the root of its family (the one that started first).</summary>
+    public static (string Name, uint Pid)? FindApp(Settings s)
+    {
+        foreach (var setting in s.AppTracks.Values)
+        {
+            try
+            {
+                var procs = System.Diagnostics.Process.GetProcessesByName(setting.Name);
+                var root = procs.OrderBy(p => { try { return p.StartTime; } catch { return DateTime.MaxValue; } }).FirstOrDefault();
+                if (root is not null) return (setting.Name, (uint)root.Id);
+            }
+            catch { /* try the next one */ }
+        }
+        return null;
+    }
+
     private void StartAudio(Timeline timeline)
     {
         try
         {
             var pick = AudioDevices.Pick(_s);
             VrMode = pick.Vr;
+            var app = FindApp(_s);
+            if (app is { } found) { AppName = found.Name; _appPid = found.Pid; }
             lock (_audioLock)
             {
-                if (pick.Game is not null)
+                if (app is { } a)
                 {
-                    var t = new AudioTrack("Game", pick.Game, loopback: true, channels: 2, timeline, _s.BufferSeconds, _s.GameVolumeComp);
+                    // The program gets its own track, and the Game track becomes everything except that program.
+                    pick.Game?.Dispose();
+                    var game = new AudioTrack("Game", a.Pid, NAudio.CoreAudioApi.ProcessLoopbackMode.ExcludeTargetProcessTree, timeline, _eff.BufferSeconds, _s.GameVolumeComp, _s.CompressAudioMemory);
+                    game.Start(); _tracks.Add(game);
+                    var own = new AudioTrack(a.Name, a.Pid, NAudio.CoreAudioApi.ProcessLoopbackMode.IncludeTargetProcessTree, timeline, _eff.BufferSeconds, _s.GameVolumeComp, _s.CompressAudioMemory);
+                    own.Start(); _tracks.Add(own);
+                }
+                else if (pick.Game is not null)
+                {
+                    var t = new AudioTrack("Game", pick.Game, loopback: true, channels: 2, timeline, _eff.BufferSeconds, _s.GameVolumeComp, _s.CompressAudioMemory);
                     t.Start(); _tracks.Add(t);
                 }
                 if (pick.Mic is not null)
                 {
-                    var t = new AudioTrack("Mic", pick.Mic, loopback: false, channels: 1, timeline, _s.BufferSeconds);
+                    var t = new AudioTrack("Mic", pick.Mic, loopback: false, channels: 1, timeline, _eff.BufferSeconds, compress: _s.CompressAudioMemory);
                     t.Start(); _tracks.Add(t);
                 }
                 UpdateDescription();
@@ -218,9 +266,10 @@ public sealed class RecorderEngine : IDisposable
     {
         if (device is null) return;
         var track = _tracks.FirstOrDefault(t => t.Name == name);
+        if (track is { IsProcess: true }) { device.Dispose(); return; }   // this one follows a program, not a device
         if (track is null)
         {
-            var t = new AudioTrack(name, device, loopback, channels, _timeline!, _s.BufferSeconds, loopback && _s.GameVolumeComp);
+            var t = new AudioTrack(name, device, loopback, channels, _timeline!, _eff.BufferSeconds, loopback && _s.GameVolumeComp, _s.CompressAudioMemory);
             if (name == "Mic" && _voice is not null) t.Tap = _voice.Feed;
             t.Start(); _tracks.Add(t);
         }
@@ -236,7 +285,24 @@ public sealed class RecorderEngine : IDisposable
     {
         if (_buffer is null) throw new InvalidOperationException("The recorder is not running.");
         AudioTrack[] tracks; lock (_audioLock) tracks = _tracks.ToArray();
-        return _buffer.Save(_s.OutDir, _fps, label, lastSeconds, tracks, _s.SeparateTracks, _s.GameGainDb, _s.MicGainDb, onCaptured);
+        // This game's own volume and folder, if it has them. Read now (not at start) so changing them applies to the next clip.
+        var profile = _s.ProfileFor(_gameName);
+        string folder = _s.OutDir;
+        if (profile?.Folder is { } sub && !string.IsNullOrWhiteSpace(sub))
+        {
+            foreach (var c in Path.GetInvalidFileNameChars()) sub = sub.Replace(c, ' ');
+            sub = sub.Trim().TrimEnd('.');
+            if (sub.Length > 0) folder = Path.Combine(_s.OutDir, sub);
+        }
+        // Each track's volume, and which ones are left out of the mix. Read now, so changing them applies to the next clip.
+        var gains = new Dictionary<string, double> { ["Game"] = profile?.GameGainDb ?? _s.GameGainDb, ["Mic"] = profile?.MicGainDb ?? _s.MicGainDb };
+        var outOfMix = new HashSet<string>();
+        if (AppName is not null && _s.AppTracks.TryGetValue(Settings.GameKey(AppName), out var appSetting))
+        {
+            gains[AppName] = appSetting.GainDb;
+            if (!appSetting.InMix) outOfMix.Add(AppName);
+        }
+        return _buffer.Save(folder, _fps, label, lastSeconds, tracks, _s.SeparateTracks, gains, outOfMix, onCaptured);
     }
 
     public void Dispose()

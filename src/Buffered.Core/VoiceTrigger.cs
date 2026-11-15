@@ -322,13 +322,18 @@ public sealed class VoiceTrigger : IDisposable
     }
     public void Dispose()
     {
-        try { _engine.RecognizeAsyncCancel(); } catch { }
-        try { _forced?.RecognizeAsyncCancel(); } catch { }
+        // End the audio first. The recognizers are waiting inside a read for more audio; if they are asked to stop before the audio
+        // has ended they wait for it forever, and so does whatever is shutting down.
         _pipe.Complete(); _forcedPipe?.Complete();
-        try { _engine.Dispose(); } catch { }
-        try { _forced?.Dispose(); } catch { }
+        var stop = Task.Run(() =>
+        {
+            try { _engine.RecognizeAsyncCancel(); } catch { }
+            try { _forced?.RecognizeAsyncCancel(); } catch { }
+            try { _engine.Dispose(); } catch { }
+            try { _forced?.Dispose(); } catch { }
+        });
+        stop.Wait(2000);   // never hold up a shutdown for more than a moment
     }
-
     /// <summary>A stream the recognizer reads from: blocks until audio arrives, ends when completed.</summary>
     private sealed class PcmPipe : Stream
     {

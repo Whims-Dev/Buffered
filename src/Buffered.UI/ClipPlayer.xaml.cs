@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -60,9 +61,70 @@ public partial class ClipPlayer : UserControl
     private bool _loadingAudio;
     private (double Pos, bool Playing)? _resume;  // where to carry on after the source is swapped for a new preview
 
-    private double GameDb => GameSlider.Value;
-    private double MicDb => MicSlider.Value;
-    private bool AudioChanged => _stems is not null && (Math.Abs(GameDb) > 0.05 || Math.Abs(MicDb) > 0.05);
+    // One row per track of the companion file (Game, a program such as Discord, Mic): a volume slider, and for programs an "in the mix" box.
+    private List<StemTrack> _tracks = new();
+    private readonly List<Slider> _sliders = new();
+    private readonly List<TextBlock> _dbTexts = new();
+    private readonly List<CheckBox?> _mixBoxes = new();
+    private static readonly string[] TrackColors = { "#7FA6FF", "#9B8CF0", "#5ED0A0", "#F0A56C", "#E07FB0" };
+
+    private double[] TrackDbs => _sliders.Select(s => s.Value).ToArray();
+    private bool[] TrackInMix => _tracks.Select((t, i) => _mixBoxes[i] is { } box ? box.IsChecked == true : t.InMix).ToArray();
+    private bool AudioChanged => _stems is not null && _tracks.Count > 0 && _sliders.Count == _tracks.Count &&
+        (TrackDbs.Any(d => Math.Abs(d) > 0.05) || Enumerable.Range(0, _tracks.Count).Any(i => TrackInMix[i] != _tracks[i].InMix));
+    private AudioEdit? CurrentEdit => AudioChanged ? new AudioEdit(_tracks.Select(t => t.Name).ToList(), TrackDbs, TrackInMix) : null;
+
+    /// <summary>Reads the companion file's tracks and builds a slider for each.</summary>
+    private async Task LoadTracksAsync(string stems, int id)
+    {
+        var tracks = await Media.ReadStemTracksAsync(stems);
+        if (id != _openId || tracks.Count == 0) return;
+        _tracks = tracks;
+        AudioRows.Children.Clear(); _sliders.Clear(); _dbTexts.Clear(); _mixBoxes.Clear();
+        int app = 0;
+        for (int i = 0; i < tracks.Count; i++)
+        {
+            var t = tracks[i];
+            string color = t.Name == "Game" ? TrackColors[0] : t.Name == "Mic" ? TrackColors[2] : TrackColors[(++app % 2 == 1) ? 1 : 3];
+            var name = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            name.Children.Add(new System.Windows.Shapes.Ellipse { Width = 9, Height = 9, Margin = new Thickness(0, 1, 9, 0), Fill = (Brush)new BrushConverter().ConvertFromString(color)! });
+            name.Children.Add(new TextBlock { Text = t.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+            if (t.IsApp)
+                name.Children.Add(new Border { Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(7, 1, 7, 2), CornerRadius = new CornerRadius(9), BorderThickness = new Thickness(1),
+                    BorderBrush = (Brush)FindResource("ControlStrokeColorDefaultBrush"), VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock { Text = "own track", FontSize = 10, Opacity = 0.8 } });
+            var db = new TextBlock { FontSize = 12, Opacity = 0.7, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            var head = new Grid { Margin = new Thickness(0, i == 0 ? 8 : 12, 0, 0) };
+            head.Children.Add(name); head.Children.Add(db);
+            int index = i;
+            var slider = new Slider { Minimum = -20, Maximum = 20, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 4, 0, 0) };
+            System.Windows.Automation.AutomationProperties.SetName(slider, $"{t.Name} volume in decibels");
+            slider.ValueChanged += (_, _) => { if (!_loadingAudio) AudioEdited(); };
+            AudioRows.Children.Add(head); AudioRows.Children.Add(slider);
+            _sliders.Add(slider); _dbTexts.Add(db);
+
+            CheckBox? mixBox = null;
+            if (t.IsApp)
+            {
+                mixBox = new CheckBox { Content = "Include in the mix", IsChecked = t.InMix, Margin = new Thickness(0, 6, 0, 0), FontSize = 12 };
+                mixBox.Checked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
+                mixBox.Unchecked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
+                AudioRows.Children.Add(mixBox);
+            }
+            _mixBoxes.Add(mixBox);
+        }
+        UpdateAudioText();
+        AudioCard.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Back to the sound the clip was saved with.</summary>
+    private void ResetAudio()
+    {
+        _loadingAudio = true;
+        foreach (var s in _sliders) s.Value = 0;
+        for (int i = 0; i < _mixBoxes.Count; i++) if (_mixBoxes[i] is { } box) box.IsChecked = _tracks[i].InMix;
+        _loadingAudio = false;
+    }
 
     private bool _dragging, _resumeAfterDrag;
     private double _holdTarget, _lastSeekTarget;
@@ -87,14 +149,15 @@ public partial class ClipPlayer : UserControl
         // Clips saved with this version have a companion file; with it the game and microphone volumes can be changed here.
         string stems = ClipNames.StemsPath(clip.Path);
         _stems = File.Exists(stems) ? stems : null;
-        _loadingAudio = true; GameSlider.Value = 0; MicSlider.Value = 0; _loadingAudio = false;
+        _tracks = new(); _sliders.Clear(); _dbTexts.Clear(); _mixBoxes.Clear(); AudioRows.Children.Clear();
         _audioTimer.Stop(); _resume = null;
-        AudioCard.Visibility = _stems is null ? Visibility.Collapsed : Visibility.Visible;
-        UpdateAudioText();
+        AudioCard.Visibility = Visibility.Collapsed;   // shown once the companion file's tracks are known
 
         UpdateRange();
         Focus();
-        _ = StartPlaybackAsync(clip, ++_openId);
+        int openId = ++_openId;
+        if (_stems is not null) _ = LoadTracksAsync(_stems, openId);
+        _ = StartPlaybackAsync(clip, openId);
     }
 
     private int _openId;
@@ -106,9 +169,11 @@ public partial class ClipPlayer : UserControl
     /// </summary>
     private async Task<string> ChooseSourceAsync(ClipItem clip)
     {
-        if (AudioChanged && _stems is not null && await Media.MakeBalancedPreviewAsync(clip.Path, _stems, GameDb, MicDb) is { } balanced)
+        if (AudioChanged && _stems is not null && await Media.MakeBalancedPreviewAsync(clip.Path, _stems, TrackDbs, TrackInMix) is { } balanced)
             return balanced;
-        if (await Media.CountAudioStreamsAsync(clip.Path) > 1 && await Media.MakePreviewAsync(clip.Path) is { } preview)
+        // Audio that starts well before the video (older and trimmed clips) plays late in this player: make a corrected copy.
+        bool badLead = await Media.AudioLeadSecondsAsync(clip.Path) > 0.04;
+        if ((badLead || await Media.CountAudioStreamsAsync(clip.Path) > 1) && await Media.MakePreviewAsync(clip.Path, realign: badLead) is { } preview)
             return preview;
         return clip.Path;
     }
@@ -148,9 +213,10 @@ public partial class ClipPlayer : UserControl
 
     // ---- audio sliders -------------------------------------------------------
 
-    private void Audio_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    /// <summary>A slider or an "in the mix" box was changed: update the texts and, after a short pause, rebuild the preview.</summary>
+    private void AudioEdited()
     {
-        if (_loadingAudio || !IsLoaded) return;
+        if (!IsLoaded) return;
         UpdateAudioText();
         UpdateRange();
         _audioTimer.Stop(); _audioTimer.Start();
@@ -160,14 +226,12 @@ public partial class ClipPlayer : UserControl
 
     private void UpdateAudioText()
     {
-        if (GameDbText is null) return;
-        GameDbText.Text = DbText(GameDb);
-        MicDbText.Text = DbText(MicDb);
+        for (int i = 0; i < _dbTexts.Count; i++) _dbTexts[i].Text = DbText(_sliders[i].Value);
+        if (AudioHint is null) return;
         AudioHint.Text = AudioChanged
             ? "Playing a preview with these volumes. Save copy or Replace original to keep them."
             : "Drag a slider to change how loud it is. The video keeps playing so you can hear the result.";
     }
-
     /// <summary>Stops playback and releases the file, so it can be moved or deleted.</summary>
     public void Release()
     {
@@ -352,7 +416,13 @@ public partial class ClipPlayer : UserControl
         if (AudioChanged)
         {
             if (HasTrim) KeepText.Inlines.Add(new System.Windows.Documents.LineBreak());
-            KeepText.Inlines.Add($"Game {DbText(GameDb)}, Mic {DbText(MicDb)}");
+            var parts = new List<string>();
+            for (int i = 0; i < _tracks.Count; i++)
+            {
+                if (Math.Abs(_sliders[i].Value) > 0.05) parts.Add($"{_tracks[i].Name} {DbText(_sliders[i].Value)}");
+                if (TrackInMix[i] != _tracks[i].InMix) parts.Add($"{_tracks[i].Name} {(TrackInMix[i] ? "in" : "out of")} the mix");
+            }
+            KeepText.Inlines.Add(string.Join(", ", parts));
         }
         if (!HasChanges) KeepText.Inlines.Add("Drag the handles on the timeline, or type a start and end, to choose the part to keep.");
         SetButtons();
@@ -429,7 +499,7 @@ public partial class ClipPlayer : UserControl
         Bar.Start = 0; Bar.End = _duration;
         if (AudioChanged)
         {
-            _loadingAudio = true; GameSlider.Value = 0; MicSlider.Value = 0; _loadingAudio = false;
+            ResetAudio();
             UpdateAudioText();
             _audioTimer.Stop(); _audioTimer.Start(); // back to the original sound
         }
@@ -466,7 +536,7 @@ public partial class ClipPlayer : UserControl
         SetBusy(true, AudioChanged ? "Saving…" : "Trimming…");
         // Only the sound changed: copy the video instead of re-encoding it.
         bool fast = FastRadio.IsChecked == true || !HasTrim;
-        var (ok, error) = await Trimmer.RunAsync(_clip.Path, Bar.Start, Bar.End, fast, output, _stems, GameDb, MicDb);
+        var (ok, error) = await Trimmer.RunAsync(_clip.Path, Bar.Start, Bar.End, fast, output, _stems, CurrentEdit);
         SetBusy(false);
         if (ok)
             Dialogs?.Toast("Saved " + Path.GetFileName(output), (HasTrim ? "Trimmed copy" : "Copy with new volumes") + " · the original is untouched", "Show in folder",
@@ -492,12 +562,12 @@ public partial class ClipPlayer : UserControl
         string original = _clip.Path;
         string temp = Path.Combine(Path.GetDirectoryName(original)!, "." + Path.GetFileNameWithoutExtension(original) + ".trim.mp4");
         double start = Bar.Start, end = Bar.End;
-        double gameDb = GameDb, micDb = MicDb;
+        var edit = CurrentEdit;
         string? stems = _stems;
         bool fast = FastRadio.IsChecked == true || !HasTrim;
 
         SetBusy(true, AudioChanged ? "Saving…" : "Trimming…");
-        var (ok, error) = await Trimmer.RunAsync(original, start, end, fast, temp, stems, gameDb, micDb);
+        var (ok, error) = await Trimmer.RunAsync(original, start, end, fast, temp, stems, edit);
         if (!ok)
         {
             SetBusy(false);

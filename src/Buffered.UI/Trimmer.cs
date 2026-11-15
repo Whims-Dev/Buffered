@@ -11,6 +11,7 @@ namespace Buffered.UI;
 internal static class Trimmer
 {
     private static string F(double s) => s.ToString("F3", CultureInfo.InvariantCulture);
+    private const string AacFix = "atrim=start_sample=1024,asetpts=N/SR/TB";   // see ReplayBuffer.AacDelayFix
     private static string Db(double v) => v.ToString("0.0#", CultureInfo.InvariantCulture) + "dB";
 
     private static readonly string[] Colors = { "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv" };
@@ -21,47 +22,68 @@ internal static class Trimmer
     /// If a companion file is given and a volume is changed, the audio is mixed again from it; otherwise the audio is copied untouched.
     /// </summary>
     public static async Task<(bool Ok, string Error)> RunAsync(string input, double start, double end, bool fast, string output,
-        string? stems = null, double gameDb = 0, double micDb = 0)
+        string? stems = null, AudioEdit? edit = null)
     {
         bool hasStems = stems is not null && File.Exists(stems);
-        bool remix = hasStems && (Math.Abs(gameDb) > 0.05 || Math.Abs(micDb) > 0.05);
+        bool remix = hasStems && edit is not null;
         string? stemsOut = hasStems ? ClipNames.StemsPath(output) : null;
         double length = end - start;
 
         // Written under a hidden temporary name and renamed when complete, so the clip list never shows a half-written file.
         string partial = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "." + Path.GetFileNameWithoutExtension(output) + ".partial.mp4");
 
+        bool fastCut = fast;
         List<string> Build(string[] video)
         {
-            var a = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-ss", F(start), "-i", input };
+            // Fast mode copies the video from the keyframe before the cut, so the audio has to start from there too.
+            var a = new List<string> { "-hide_banner", "-loglevel", "error", "-y" };
+            if (fastCut) a.Add("-noaccurate_seek");
+            a.AddRange(new[] { "-ss", F(start), "-i", input });
             if (hasStems) a.AddRange(new[] { "-ss", F(start), "-i", stems! });
 
             if (remix)
             {
-                // Game and Mic from the companion file, each at its own volume; the same result goes into the clip's mix and the new companion file.
-                a.AddRange(new[] { "-filter_complex",
-                    $"[1:a:0]volume={Db(gameDb)},asplit=2[g1][g2];[1:a:1]volume={Db(micDb)},asplit=2[m1][m2];" +
-                    "[g1]aformat=channel_layouts=stereo[g1s];[m1]aformat=channel_layouts=stereo[m1s];" +
-                    "[g1s][m1s]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[mix]" });
-                a.AddRange(new[] { "-t", F(length), "-map", "0:v", "-map", "[mix]", "-map_metadata", "0" });
+                // Every track from the companion file at its own volume; the same result goes into the clip's mix (the tracks that are in it)
+                // and into the new companion file.
+                int n = edit!.Names.Count;
+                var members = Enumerable.Range(0, n).Where(i => edit.InMix[i]).ToList();
+                var graph = new List<string>();
+                for (int i = 0; i < n; i++) graph.Add($"[1:a:{i}]volume={Db(edit.Db[i])},asplit=2[m{i}][s{i}]");
+                foreach (int i in Enumerable.Range(0, n).Where(i => !edit.InMix[i])) graph.Add($"[m{i}]anullsink");
+                foreach (int i in members) graph.Add($"[m{i}]aformat=channel_layouts=stereo[ms{i}]");
+                if (members.Count > 0)
+                    graph.Add(string.Concat(members.Select(i => $"[ms{i}]")) + $"amix=inputs={members.Count}:duration=longest:normalize=0,alimiter=limit=0.95,{AacFix}[mix]");
+                a.AddRange(new[] { "-filter_complex", string.Join(";", graph) });
+                a.AddRange(new[] { "-t", F(length), "-map", "0:v" });
+                if (members.Count > 0) a.AddRange(new[] { "-map", "[mix]" });
+                a.AddRange(new[] { "-map_metadata", "0" });
                 a.AddRange(video);
-                a.AddRange(new[] { "-c:a", "aac", "-b:a", "160k", "-metadata:s:a:0", "title=Mix", "-metadata:s:a:0", "handler_name=Mix" });
+                if (members.Count > 0) a.AddRange(new[] { "-c:a", "aac", "-b:a", "160k", "-metadata:s:a:0", "title=Mix", "-metadata:s:a:0", "handler_name=Mix" });
+                else a.Add("-an");
             }
             else
             {
                 a.AddRange(new[] { "-t", F(length), "-map", "0", "-map_metadata", "0" });
                 a.AddRange(video);
-                a.AddRange(new[] { "-c:a", "copy" });
+                // Copying audio from the middle of an AAC stream leaves it starting a little before the video, hidden by an edit list that
+                // Windows' media engine ignores (the audio then plays late). When the start is cut, encode it again so it begins exactly.
+                if (start > 0.05) a.AddRange(new[] { "-c:a", "aac", "-b:a", "160k", "-af", AacFix });
+                else a.AddRange(new[] { "-c:a", "copy" });
             }
-            a.AddRange(new[] { "-movflags", "+faststart", partial });
+            a.AddRange(new[] { "-use_editlist", "0", "-movflags", "+faststart", partial });
 
             if (hasStems)
             {
                 a.AddRange(new[] { "-t", F(length) });
                 if (remix)
-                    a.AddRange(new[] { "-map", "[g2]", "-map", "[m2]", "-vn", "-c:a", "aac", "-b:a", "128k",
-                        "-metadata:s:a:0", "title=Game", "-metadata:s:a:0", "handler_name=Game",
-                        "-metadata:s:a:1", "title=Mic", "-metadata:s:a:1", "handler_name=Mic", "-f", "matroska", stemsOut! });
+                {
+                    int n = edit!.Names.Count;
+                    for (int i = 0; i < n; i++) a.AddRange(new[] { "-map", $"[s{i}]" });
+                    a.AddRange(new[] { "-vn", "-c:a", "aac", "-b:a", "128k" });
+                    for (int i = 0; i < n; i++)
+                        a.AddRange(new[] { $"-metadata:s:a:{i}", $"title={edit.Names[i]}", $"-metadata:s:a:{i}", $"handler_name={edit.Names[i]}", $"-metadata:s:a:{i}", $"inmix={(edit.InMix[i] ? 1 : 0)}" });
+                    a.AddRange(new[] { "-f", "matroska", stemsOut! });
+                }
                 else
                     a.AddRange(new[] { "-map", "1:a", "-vn", "-c:a", "copy", "-f", "matroska", stemsOut! });
             }

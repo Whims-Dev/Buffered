@@ -6,6 +6,31 @@
         WindowStartupLocation="CenterScreen" ThemeMode="System"
         SizeChanged="Window_SizeChanged" Closed="Window_Closed">
     <Window.Resources>
+        <!-- The small revert arrow next to a game setting that has been changed -->
+        <Style x:Key="RevertButton" TargetType="Button">
+            <Setter Property="Width" Value="28"/><Setter Property="Height" Value="28"/><Setter Property="MinHeight" Value="0"/><Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="FontFamily" Value="{StaticResource IconFont}"/><Setter Property="FontSize" Value="14"/><Setter Property="Content" Value="&#xE7A7;"/>
+            <Setter Property="Cursor" Value="Hand"/><Setter Property="ToolTip" Value="Use the current setting"/><Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" CornerRadius="6" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- A text box with no frame of its own, for typing inside another shape (like the add-phrase pill) -->
         <Style x:Key="BareTextBox" TargetType="TextBox">
             <Setter Property="Background" Value="Transparent"/>
@@ -152,7 +177,7 @@
                 <StackPanel x:Name="FilterPanel" Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16"/>
 
                 <Grid Grid.Row="2">
-                    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" Background="Transparent"
+                    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" Background="Transparent" FocusVisualStyle="{x:Null}" Focusable="False"
                                   PreviewMouseLeftButtonDown="Scroller_Down" PreviewMouseMove="Scroller_Move" PreviewMouseLeftButtonUp="Scroller_Up">
                         <ItemsControl x:Name="GroupList">
                             <ItemsControl.ItemTemplate>
@@ -242,9 +267,44 @@
             </Grid>
 
             <!-- Settings -->
-            <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="26,20,26,24">
-                    <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,16"/>
+            <Grid x:Name="SettingsPage" Visibility="Collapsed">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SettingsNavColumn" Width="176"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+
+              <!-- Sections (built in code from the rows below) -->
+              <Border Grid.Column="0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="0,0,1,0" Padding="10,20,10,0">
+                <StackPanel x:Name="SettingsNav"/>
+              </Border>
+
+              <Grid Grid.Column="1" Margin="26,20,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,26,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Grid Grid.Column="1" Width="260" Height="36" VerticalAlignment="Center">
+                        <TextBox x:Name="SettingsSearch" VerticalContentAlignment="Center" Padding="8,0,32,0" TextChanged="SettingsSearch_TextChanged" AutomationProperties.Name="Search settings"/>
+                        <TextBlock x:Name="SettingsSearchHint" Text="Search settings   Ctrl+F" IsHitTestVisible="False" Opacity="0.5" VerticalAlignment="Center" Margin="11,0,0,0"/>
+                        <Button x:Name="SettingsSearchClear" HorizontalAlignment="Right" Width="28" Height="28" MinHeight="0" Padding="0" Margin="0,0,4,0" Background="Transparent" BorderBrush="Transparent" Visibility="Collapsed"
+                                FontFamily="{StaticResource IconFont}" Content="&#xE711;" FontSize="11" ToolTip="Clear search" AutomationProperties.Name="Clear search" Click="SettingsSearchClear_Click"/>
+                    </Grid>
+                </Grid>
+                <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" FocusVisualStyle="{x:Null}" Focusable="False">
+                    <StackPanel x:Name="SettingsBody" Margin="0,0,26,12"/>
+                </ScrollViewer>
+                <TextBlock x:Name="ApplyText" Grid.Row="2" Style="{StaticResource Caption}" Margin="2,8,26,12"/>
+              </Grid>
+
+              <!-- The rows as they were written; at startup they are moved into the sections above -->
+              <StackPanel x:Name="SettingsSource" Grid.ColumnSpan="2" Visibility="Collapsed">
 
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                         <StackPanel>
@@ -255,7 +315,7 @@
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,380,0"><TextBlock Text="Record game windows"/><TextBlock Text="Record only the game, not the whole monitor." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,380,0"><TextBlock Text="Record game windows"/><TextBlock Text="Games listed here get their own settings: click one to change them. A * means its settings differ from your defaults." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center" MaxWidth="360">
                                     <WrapPanel x:Name="GameChips"/>
                                     <Button x:Name="AddGameButton" Content="+ Add game" Height="30" Padding="14,0" Margin="0,2,0,2" Click="AddGame_Click" AutomationProperties.Name="Add a game">
@@ -298,7 +358,87 @@
                                     </Popup>
                                 </WrapPanel>
                             </Grid>
-                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Border x:Name="GamePanel" Visibility="Collapsed" Margin="18,0,18,14" Padding="16,2" CornerRadius="10" BorderThickness="1"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                                <StackPanel>
+                                    <Grid Margin="0,10,0,6">
+                                        <TextBlock x:Name="GamePanelTitle" VerticalAlignment="Center"/>
+                                        <Button x:Name="GameRevertAll" HorizontalAlignment="Right" Height="28" MinHeight="0" Padding="8,0" Background="Transparent" BorderThickness="0" Click="GameRevertAll_Click"
+                                                Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" AutomationProperties.Name="Revert all to current settings">
+                                            <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE7A7;" FontSize="12" Margin="0,1,6,0" VerticalAlignment="Center"/><TextBlock Text="Revert all to current settings" FontSize="12" VerticalAlignment="Center"/></StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Record only this game's window"/><TextBlock x:Name="GameWindowStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock Text="Off records your whole monitor but still uses this game's settings below." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="GameWindowRevert" Tag="window" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert window setting"/>
+                                            <CheckBox x:Name="GameWindowOnlyBox" Style="{StaticResource SwitchBox}" Checked="GameEdit_Changed" Unchecked="GameEdit_Changed" AutomationProperties.Name="Record only this game's window"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Quality"/><TextBlock x:Name="GameQualityStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameQualityNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="GameQualityRevert" Tag="quality" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert quality"/>
+                                            <ComboBox x:Name="GameResBox" Width="170" Margin="0,0,8,0" SelectionChanged="GameEdit_Changed" AutomationProperties.Name="Resolution for this game"/>
+                                            <ComboBox x:Name="GameFpsBox" Width="170" SelectionChanged="GameEdit_Changed" AutomationProperties.Name="Frame rate for this game"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Buffer length"/><TextBlock x:Name="GameBufferStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameBufferNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="GameBufferRevert" Tag="buffer" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert buffer length"/>
+                                            <ComboBox x:Name="GameBufferBox" Width="348" SelectionChanged="GameEdit_Changed" AutomationProperties.Name="Buffer length for this game"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Game volume"/><TextBlock x:Name="GameGainStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameGainNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="GameGainRevert" Tag="game" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert game volume"/>
+                                            <Slider x:Name="GameGainSlider2" Width="200" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameGain_Changed" AutomationProperties.Name="Game volume for this game in decibels"/>
+                                            <TextBlock x:Name="GameGainValue" Width="76" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Mic volume"/><TextBlock x:Name="GameMicStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameMicNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="GameMicRevert" Tag="mic" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert mic volume"/>
+                                            <Slider x:Name="GameMicSlider2" Width="200" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameMic_Changed" AutomationProperties.Name="Mic volume for this game in decibels"/>
+                                            <TextBlock x:Name="GameMicValue" Width="76" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10,0,12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Save clips to folder"/><TextBlock x:Name="GameFolderStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock Text="New clips from this game go straight into this folder. Leave empty for Unsorted." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="GameFolderRevert" Tag="folder" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert folder"/>
+                                            <Grid Width="348" Height="34"><TextBox x:Name="GameFolderBox" VerticalContentAlignment="Center" MaxLength="60" TextChanged="GameFolder_Changed" AutomationProperties.Name="Folder for this game's clips"/>
+                                                <TextBlock Text="None (Unsorted)" IsHitTestVisible="False" Opacity="0.5" VerticalAlignment="Center" Margin="11,0,0,0">
+                                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers><DataTrigger Binding="{Binding Text.Length, ElementName=GameFolderBox}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                                </TextBlock></Grid>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,70,0"><TextBlock Text="Keep game windows visible"/><TextBlock Text="Restores a minimized game behind your other windows so recording continues. If off, the monitor is recorded while it's minimized." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <CheckBox x:Name="KeepVisibleBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Keep game windows visible"/>
@@ -338,7 +478,72 @@
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
-                                <StackPanel VerticalAlignment="Center"><TextBlock Text="Game volume"/><TextBlock Text="Louder or quieter game sound in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="App on its own track"/><TextBlock Text="Record one app's sound (like Discord) separately from the game, so you can turn it up or down later. It is taken out of the Game track." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" MaxWidth="300">
+                                    <WrapPanel x:Name="AppChips"/>
+                                    <Button x:Name="AddAppButton" Content="+ Add app" Height="30" Padding="14,0" Margin="0,2,0,2" Click="AddApp_Click" AutomationProperties.Name="Add an app">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Pill" CornerRadius="15" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Background="{DynamicResource ControlFillColorDefaultBrush}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/></Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                    <Popup x:Name="AppPopup" PlacementTarget="{Binding ElementName=AddAppButton}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                        <Border Width="300" Margin="6" Padding="6" CornerRadius="10" Background="{DynamicResource ApplicationBackgroundBrush}" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBox x:Name="AppSearch" TextChanged="AppSearch_Changed" ToolTip="Search the running apps" AutomationProperties.Name="Search running apps"/>
+                                                <TextBlock Text="Running now" Style="{StaticResource Caption}" Margin="6,10,0,4"/>
+                                                <ListBox x:Name="AppList" MaxHeight="220" BorderThickness="0" Background="Transparent" Padding="0" SelectionChanged="AppList_Selected" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                                    <ListBox.ItemContainerStyle>
+                                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                                            <Setter Property="Padding" Value="8,0"/><Setter Property="MinHeight" Value="34"/><Setter Property="Margin" Value="0,1"/>
+                                                        </Style>
+                                                    </ListBox.ItemContainerStyle>
+                                                    <ListBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding Process}" VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding Detail}" Style="{StaticResource Caption}" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </WrapPanel>
+                            </Grid>
+                            <Border x:Name="AppPanel" Visibility="Collapsed" Margin="18,0,18,14" Padding="16,2" CornerRadius="10" BorderThickness="1"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                                <StackPanel>
+                                    <TextBlock x:Name="AppPanelTitle" Margin="0,10,0,6"/>
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><TextBlock Text="Volume in new clips"/><TextBlock Text="Louder or quieter than it plays on your speakers" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Slider x:Name="AppGainSlider" Width="200" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="AppGain_Changed" AutomationProperties.Name="App volume in decibels"/>
+                                            <TextBlock x:Name="AppGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                                    <Grid Margin="0,10,0,12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><TextBlock Text="Include in the mixed track"/><TextBlock Text="Turn off to leave this app out of the clip's normal sound (handy for sharing without friends' voices). It stays on its own track, which you can switch back on in the editor." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                        <CheckBox x:Name="AppMixBox" Grid.Column="1" Style="{StaticResource SwitchBox}" VerticalAlignment="Center" Checked="AppMix_Changed" Unchecked="AppMix_Changed" AutomationProperties.Name="Include in the mixed track"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>                            
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,330,0"><TextBlock Text="Game volume"/><TextBlock Text="Louder or quieter game sound in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Slider x:Name="GameGainSlider" Width="230" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
                                             ValueChanged="Gain_Changed" AutomationProperties.Name="Game volume in decibels"/>
@@ -347,7 +552,7 @@
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
-                                <StackPanel VerticalAlignment="Center"><TextBlock Text="Mic volume"/><TextBlock Text="Louder or quieter microphone in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,330,0"><TextBlock Text="Mic volume"/><TextBlock Text="Louder or quieter microphone in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Slider x:Name="MicGainSlider" Width="230" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
                                             ValueChanged="Gain_Changed" AutomationProperties.Name="Microphone volume in decibels"/>
@@ -415,7 +620,7 @@
                                 </Grid>
                                 <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                                 <Grid Margin="18,12">
-                                    <StackPanel VerticalAlignment="Center"><TextBlock Text="Sensitivity"/><TextBlock Text="More sensitive catches you more often, but may clip by accident." Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,360,0"><TextBlock Text="Sensitivity"/><TextBlock Text="More sensitive catches you more often, but may clip by accident." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                     <Border Height="36" CornerRadius="8" BorderThickness="1" HorizontalAlignment="Right" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                                         <UniformGrid Rows="1">
                                             <RadioButton x:Name="SensLow" GroupName="sens" Style="{StaticResource SegButton}" Padding="12,0" Content="More sensitive" Checked="Sens_Checked"/>
@@ -474,11 +679,48 @@
                                 <StackPanel VerticalAlignment="Center"><TextBlock Text="Draw this window on the CPU"/><TextBlock Text="Uses no VRAM. Applies the next time the window opens." Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                 <CheckBox x:Name="SoftwareBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Draw this window on the CPU"/>
                             </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Start with Windows"/><TextBlock Text="Starts the recorder in the tray when you sign in, so it is always ready. No window opens." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <CheckBox x:Name="StartupBox" Grid.Column="1" Style="{StaticResource SwitchBox}" VerticalAlignment="Center" Checked="StartupBox_Changed" Unchecked="StartupBox_Changed" AutomationProperties.Name="Start with Windows"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Shortcuts"/><TextBlock x:Name="ShortcutText" Text="Add Buffered to your desktop or Start menu. Click a green one again to remove it." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="DesktopShortcutButton" Height="34" MinWidth="110" Padding="14,0" Margin="0,0,8,0" Click="DesktopShortcut_Click" AutomationProperties.Name="Desktop shortcut">
+                                        <StackPanel Orientation="Horizontal"><TextBlock x:Name="DesktopGlyph" FontFamily="{StaticResource IconFont}" Text="&#xE7F4;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock x:Name="DesktopLabel" Text="Desktop" TextWrapping="NoWrap" VerticalAlignment="Center"/></StackPanel>
+                                    </Button>
+                                    <Button x:Name="StartMenuShortcutButton" Height="34" MinWidth="130" Padding="14,0" Click="StartMenuShortcut_Click" AutomationProperties.Name="Start menu shortcut">
+                                        <StackPanel Orientation="Horizontal"><TextBlock x:Name="StartMenuGlyph" FontFamily="{StaticResource IconFont}" Text="&#xE8FD;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock x:Name="StartMenuLabel" Text="Start menu" TextWrapping="NoWrap" VerticalAlignment="Center"/></StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Compress audio in memory"/><TextBlock Text="Holds the buffered audio at half the size, saving about 45 MB of RAM with a 5 minute buffer. Costs almost no CPU, but adds a faint hiss under very quiet sounds. Restarts recording." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <CheckBox x:Name="CompressBox" Grid.Column="1" Style="{StaticResource SwitchBox}" VerticalAlignment="Center" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Compress audio in memory"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Updates"/><TextBlock x:Name="UpdateText" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="UpdateOpenButton" Height="34" Padding="14,0" Margin="0,0,8,0" Visibility="Collapsed" Style="{StaticResource PrimaryButton}" Click="UpdateOpen_Click" AutomationProperties.Name="Open the download page">
+                                        <TextBlock Text="Download" TextWrapping="NoWrap" VerticalAlignment="Center"/>
+                                    </Button>
+                                    <Button x:Name="UpdateButton" Height="34" Padding="14,0" Click="CheckUpdates_Click" AutomationProperties.Name="Check for updates">
+                                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE72C;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock Text="Check for updates" TextWrapping="NoWrap" VerticalAlignment="Center"/></StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
-                    <TextBlock x:Name="ApplyText" Style="{StaticResource Caption}" Margin="4,0,0,0"/>
-                </StackPanel>
-            </ScrollViewer>
+              </StackPanel>
+            </Grid>
 
             <!-- Player and trimmer: covers the content area while a clip is open -->
             <local:ClipPlayer x:Name="Player" Visibility="Collapsed"

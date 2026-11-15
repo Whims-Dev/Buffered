@@ -176,19 +176,34 @@ sealed class TrayApp : ApplicationContext
         if (_paused || engine is null) { _targetFlips = 0; return; }
 
         var want = GameWindow.Find(_settings);
-        if (want is not null && _settings.KeepWindowVisible) GameWindow.EnsureVisible(want.Handle);
+        var profile = _settings.ProfileFor(want?.ProcessName);
+        bool windowOnly = want is not null && (profile?.WindowOnly ?? true);
+        if (windowOnly && _settings.KeepWindowVisible) GameWindow.EnsureVisible(want!.Handle);
 
-        string wantKey = want is null ? "monitor" : $"win:{want.ProcessId}";
-        bool settled = wantKey == engine.SourceKey || wantKey == engine.FallbackKey; // on the right source, or already tried and fell back
+        string wantKey = windowOnly ? $"win:{want!.ProcessId}" : "monitor";
+        string wantProfile = profile is { IsEdited: true } ? Settings.GameKey(want!.ProcessName) : "";
+        // On the right source (or already tried it and fell back), and using the right game's settings.
+        bool settled = (wantKey == engine.SourceKey || wantKey == engine.FallbackKey) && wantProfile == engine.ProfileKey;
         _targetFlips = settled ? 0 : _targetFlips + 1;
         if (_targetFlips >= 2) Relaunch(false);
+
+        // The program on its own track: recording restarts when it starts or stops (or is replaced by a new copy), because the
+        // Game track changes from the whole device to "everything except that program" and back.
+        var wantApp = RecorderEngine.FindApp(_settings);
+        string wantAppKey = wantApp is { } w ? $"{Settings.GameKey(w.Name)}:{w.Pid}" : "";
+        _appFlips = wantAppKey != engine.AppKey ? _appFlips + 1 : 0;
+        if (_appFlips >= 2) Relaunch(false);
     }
+
+    private int _appFlips;
 
     private string? DoSave(Action? onCaptured = null)
     {
         RecorderEngine? e; lock (_engineLock) e = _engine;
         if (e is null) throw new InvalidOperationException(_paused ? "Recording is paused." : _error ?? "The recorder is not running.");
-        return _lastClip = e.SaveClip(ForegroundApp.Current() ?? _lastApp, onCaptured: onCaptured);
+        // A recorded game names its own clips; otherwise the clip is named after the program that was in front.
+        string? label = e.GameName is { Length: > 0 } g ? ClipNames.FriendlyName(g) : (ForegroundApp.Current() ?? _lastApp);
+        return _lastClip = e.SaveClip(label, onCaptured: onCaptured);
     }
 
     private void SaveClip()
@@ -287,6 +302,8 @@ sealed class TrayApp : ApplicationContext
             || _settings.VoiceDictationWeight != s.VoiceDictationWeight || _settings.VoiceFuzzy != s.VoiceFuzzy || _settings.VoiceForcedConfidence != s.VoiceForcedConfidence;
         _settings.VoiceClip = s.VoiceClip; _settings.VoicePhrases = s.VoicePhrases; _settings.VoiceConfidence = s.VoiceConfidence;
         _settings.VoiceDictationWeight = s.VoiceDictationWeight; _settings.VoiceFuzzy = s.VoiceFuzzy; _settings.VoiceForcedConfidence = s.VoiceForcedConfidence;
+        _settings.AppTracks = s.AppTracks;   // an app's volume and whether it is in the mix apply to the next clip
+        _settings.GameProfiles = s.GameProfiles;   // a game's volume and folder apply to its next clip
         if (voiceChanged) { RecorderEngine? e; lock (_engineLock) e = _engine; e?.ConfigureVoice(); } // starts or stops listening; the buffer is kept
         if (_settings.Hotkey != s.Hotkey)
         {
@@ -318,7 +335,7 @@ sealed class TrayApp : ApplicationContext
 
         return e is null
             ? new RecorderStatus(false, 0, _settings.BufferSeconds, 0, _vram, _cpuPct, 0, 0, 0, "", _error, _paused)
-            : new RecorderStatus(true, e.BufferedSeconds, _settings.BufferSeconds, (e.BufferedBytes + e.AudioBytes) / 1048576.0, _vram, _cpuPct,
+            : new RecorderStatus(true, e.BufferedSeconds, e.BufferSeconds, (e.BufferedBytes + e.AudioBytes) / 1048576.0, _vram, _cpuPct,
                                  e.OutputWidth, e.OutputHeight, e.Fps, e.Monitor?.ToString() ?? "", null, false, e.AudioDescription, e.GameLevel, e.MicLevel, e.SourceName,
                                  !_settings.VoiceClip ? "" : e.VoiceListening ? $"Listening on {e.MicName}" : e.VoiceError ?? "Starting…", e.VoiceLastHeard, e.VoiceLive);
     }
@@ -354,6 +371,9 @@ sealed class TrayApp : ApplicationContext
     private void Quit()
     {
         _quit = true;
+        // A restart starts the new recorder and then waits for this one to exit. If anything in shutdown ever gets stuck,
+        // this makes sure the process still ends, instead of leaving no recorder at all.
+        new Thread(() => { Thread.Sleep(6000); Environment.Exit(0); }) { IsBackground = true, Name = "exit-watchdog" }.Start();
         _timer.Stop();
         _tray.Visible = false;
         lock (_engineLock) { _engine?.Dispose(); _engine = null; }

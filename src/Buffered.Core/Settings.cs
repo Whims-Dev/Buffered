@@ -2,8 +2,62 @@ using System.Text.Json;
 
 namespace Buffered;
 
+/// <summary>
+/// Settings for one game that differ from the defaults. Anything left null follows the current default setting, so changing a
+/// default later also changes every game that has not overridden it.
+/// </summary>
+public sealed class GameProfile
+{
+    /// <summary>True: record only this game's window. False: record the whole monitor but still use this game's other settings.</summary>
+    public bool WindowOnly { get; set; } = true;
+    public int? Height { get; set; }
+    public int? Fps { get; set; }
+    public int? BufferSeconds { get; set; }
+    public double? GameGainDb { get; set; }
+    public double? MicGainDb { get; set; }
+    /// <summary>A folder inside the clips folder that this game's clips are saved into (empty for the clips folder itself).</summary>
+    public string? Folder { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsEdited => !WindowOnly || Height.HasValue || Fps.HasValue || BufferSeconds.HasValue || GameGainDb.HasValue || MicGainDb.HasValue
+                            || !string.IsNullOrWhiteSpace(Folder);
+}
+
+/// <summary>A program whose sound is recorded on a track of its own (Discord, for example).</summary>
+public sealed class AppTrackSetting
+{
+    /// <summary>The program's process name without .exe, as shown to the user.</summary>
+    public string Name { get; set; } = "";
+    /// <summary>Louder (+) or quieter (-) than it plays, in decibels, in new clips.</summary>
+    public double GainDb { get; set; }
+    /// <summary>False leaves the program out of the clip's mixed sound; it is still on its own track in the companion file.</summary>
+    public bool InMix { get; set; } = true;
+}
+
 public sealed class Settings
 {
+    /// <summary>Programs recorded on their own track, keyed by lower-case process name. Currently one is supported.</summary>
+    public Dictionary<string, AppTrackSetting> AppTracks { get; set; } = new();
+
+    /// <summary>Per-game settings, keyed by the game's lower-case process name (the same names as in <see cref="WindowApps"/>).</summary>
+    public Dictionary<string, GameProfile> GameProfiles { get; set; } = new();
+
+    public static string GameKey(string name) => name.Trim().ToLowerInvariant();
+
+    public GameProfile? ProfileFor(string? game) =>
+        game is { Length: > 0 } && GameProfiles.TryGetValue(GameKey(game), out var p) ? p : null;
+
+    /// <summary>A copy of these settings with a game's video overrides applied (what recording uses while that game runs).</summary>
+    public Settings WithProfile(GameProfile? p)
+    {
+        var c = (Settings)MemberwiseClone();
+        if (p is null) return c;
+        if (p.Height is { } h) c.Height = h;
+        if (p.Fps is { } f) c.Fps = f;
+        if (p.BufferSeconds is { } b) c.BufferSeconds = b;
+        return c;
+    }
+
     /// <summary>Output height in pixels. Width follows the monitor's aspect ratio.</summary>
     public int Height { get; set; } = 720;
     public int Fps { get; set; } = 60;
@@ -20,6 +74,9 @@ public sealed class Settings
 
     /// <summary>Save a clip when one of the phrases below is said into the microphone. Off by default: it listens continuously.</summary>
     public bool VoiceClip { get; set; } = false;
+
+    /// <summary>Hold the buffered audio at half the size (8-bit companded). Saves memory, costs a faint noise floor under quiet sounds.</summary>
+    public bool CompressAudioMemory { get; set; } = false;
     /// <summary>The phrases that save a clip, separated by commas.</summary>
     public string VoicePhrases { get; set; } = "clip that";
     /// <summary>How sure the recognizer must be (0 to 1) before a phrase counts. Higher means fewer accidental clips, more misses.</summary>

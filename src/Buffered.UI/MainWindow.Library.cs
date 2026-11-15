@@ -50,6 +50,7 @@ public partial class MainWindow
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
+        if (!e.Handled && SettingsKey(e)) { e.Handled = true; return; }
         if (e.Handled || ClipsPage.Visibility != Visibility.Visible || Dialogs.IsOpen || Keyboard.FocusedElement is TextBox) return;
         if (e.Key == Key.Escape && _sel.Count > 0) { SetSelection(Array.Empty<ClipItem>()); e.Handled = true; }
         else if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control) { SetSelection(_shown); e.Handled = true; }

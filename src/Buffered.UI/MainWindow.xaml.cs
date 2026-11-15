@@ -36,6 +36,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings = settings;
         InitializeComponent();
         DataContext = this;
+        BuildSettingsLayout();
 
         if (startedRecorder)
         {
@@ -374,7 +375,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _games.AddRange((_settings.WindowApps ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase));
         RebuildGameChips();
         KeepVisibleBox.IsChecked = _settings.KeepWindowVisible;
+        CompressBox.IsChecked = _settings.CompressAudioMemory;
         PopulateVoice();
+        RebuildAppChips();
+        RefreshGeneral();
         TracksBox.IsChecked = _settings.SeparateTracks;
         GameGainSlider.Value = _settings.GameGainDb;
         MicGainSlider.Value = _settings.MicGainDb;
@@ -388,7 +392,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Settings that need the recorder to restart (and so empty its buffer) versus ones it can take while running.
     private string _hardKey = "";
     private string HardKey() => string.Join("|", _settings.MonitorDevice, _settings.Height, _settings.Fps, _settings.BufferSeconds,
-        _settings.GameAudioDevice, _settings.MicDevice, _settings.VrAutoSwitch, _settings.GameVolumeComp, _settings.OutDir, _settings.WindowApps);
+        _settings.GameAudioDevice, _settings.MicDevice, _settings.VrAutoSwitch, _settings.GameVolumeComp, _settings.OutDir, _settings.WindowApps, _settings.CompressAudioMemory, GameProfilesKey(), string.Join(",", _settings.AppTracks.Keys.OrderBy(k => k)));
 
     private static string DbText(double v) => Math.Abs(v) < 0.05 ? "0 dB" : $"{(v > 0 ? "+" : "−")}{Math.Abs(v):0.#} dB";
 
@@ -459,10 +463,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         foreach (var g in _games)
         {
             var name = g;
+            bool selected = string.Equals(_selectedGame, name, StringComparison.OrdinalIgnoreCase);
             var label = new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center };
+            var star = new TextBlock { Text = "*", Foreground = Gold, FontWeight = FontWeights.SemiBold, Margin = new Thickness(3, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                                       Visibility = IsGameEdited(name) ? Visibility.Visible : Visibility.Collapsed };
             var x = new Button
             {
-                Content = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9,
+                Content = "\uE711", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9,
                 Padding = new Thickness(5), Margin = new Thickness(6, 0, 0, 0), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
                 VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand
             };
@@ -471,14 +478,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var chip = new Border
             {
                 CornerRadius = new CornerRadius(15), Height = 30, Padding = new Thickness(14, 0, 4, 0), Margin = new Thickness(0, 2, 6, 2),
-                BorderThickness = new Thickness(1), BorderBrush = (Brush)FindResource("ControlStrokeColorDefaultBrush"),
-                Background = (Brush)FindResource("ControlFillColorDefaultBrush"),
-                Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { label, x } }
+                BorderThickness = new Thickness(1), Cursor = Cursors.Hand, ToolTip = "Click to change this game's settings",
+                BorderBrush = selected ? Gold : (Brush)FindResource("ControlStrokeColorDefaultBrush"),
+                Background = selected ? new SolidColorBrush(Color.FromArgb(0x30, 0xE0, 0xB8, 0x4A)) : (Brush)FindResource("ControlFillColorDefaultBrush"),
+                Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { label, star, x } }
             };
+            chip.MouseLeftButtonUp += (_, _) => SelectGame(name);
             GameChips.Children.Add(chip);
         }
+        RefreshGamePanel();
     }
-
     private void AddGame_Click(object sender, RoutedEventArgs e)
     {
         var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "explorer", "ApplicationFrameHost", "TextInputHost", "SystemSettings", "Buffered", "BufferedUI", "BufferedRecorder", "ShellExperienceHost", "SearchHost", "StartMenuExperienceHost", "LockApp" };
@@ -539,6 +548,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings.WindowApps = string.Join(", ", _games);
         _settings.KeepWindowVisible = KeepVisibleBox.IsChecked == true;
         ReadVoice();
+        _settings.CompressAudioMemory = CompressBox.IsChecked == true;
         _settings.SeparateTracks = TracksBox.IsChecked == true;
         _settings.UiSoftwareRendering = SoftwareBox.IsChecked == true;
 
@@ -577,20 +587,116 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Video at its bitrate, plus audio kept as raw 48 kHz 16-bit PCM: game stereo (192 KB/s) and mic mono (96 KB/s).
         double video = _settings.EffectiveBitrateKbps * 1000.0 / 8 * _settings.BufferSeconds / 1048576;
         double audio = (192_000.0 + (_settings.MicDevice == AudioDevices.None ? 0 : 96_000.0)) * (_settings.BufferSeconds + 15) / 1048576;
+        if (_settings.CompressAudioMemory) audio /= 2;   // mu-law holds each sample in 8 bits
         RamHint.Text = $"Uses up to about {video + audio:F0} MB of RAM, not VRAM";
     }
 
-    private void BrowseFolder_Click(object sender, RoutedEventArgs e)
+    private async void BrowseFolder_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Choose where clips are saved", InitialDirectory = _settings.OutDir };
         if (dlg.ShowDialog(this) != true) return;
 
-        _settings.OutDir = dlg.FolderName;
+        string oldDir = _settings.OutDir, newDir = dlg.FolderName;
+        if (!SamePath(oldDir, newDir) && Directory.Exists(oldDir) && !IsInside(newDir, oldDir) && !IsInside(oldDir, newDir))
+        {
+            ClipLibrary.Use(oldDir);
+            var items = LibraryItems(oldDir);
+            if (items.Count > 0)
+            {
+                long bytes = items.Sum(SizeOf);
+                bool move = await Dialogs.ConfirmAsync("Move your clips too?",
+                    $"{_allClips.Count} clips ({FormatSize(bytes)}) are in the current folder. Move them, with their folders, favorites and notes, to the new one?\n\nIf you leave them, they stay where they are and the library will show only new clips.",
+                    "Move clips", false, "Leave them");
+                if (move)
+                {
+                    _watcher?.Dispose(); _watcher = null;
+                    ApplyText.Text = "Moving clips…";
+                    string? error = await Task.Run(() => MoveLibrary(items, oldDir, newDir));
+                    if (error is not null) await Dialogs.MessageAsync("Couldn't move every clip", error + "\n\nWhatever couldn't be moved is still in the old folder.");
+                    else Dialogs.Toast("Clips moved", newDir);
+                }
+            }
+        }
+
+        _settings.OutDir = newDir;
         FolderText.Text = _settings.OutDir;
         WatchFolder();
         LoadClips();
         ApplyText.Text = "Applying…";
         _applyTimer.Stop(); _applyTimer.Start();
+    }
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when <paramref name="child"/> is the same as, or lives inside, <paramref name="parent"/>.</summary>
+    private static bool IsInside(string child, string parent) =>
+        (Path.GetFullPath(child).TrimEnd('\\') + "\\").StartsWith(Path.GetFullPath(parent).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatSize(long bytes) => bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} GB" : $"{bytes / (double)(1L << 20):0} MB";
+
+    /// <summary>Everything Buffered keeps in the clips folder: clips, hidden companion files, the library file and the clip folders.</summary>
+    private static List<string> LibraryItems(string dir)
+    {
+        var list = new List<string>();
+        foreach (var f in Directory.EnumerateFiles(dir))
+        {
+            var n = Path.GetFileName(f);
+            if (n.StartsWith('.') || n.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)) list.Add(f);
+        }
+        foreach (var name in ClipLibrary.Folders())
+        {
+            var p = ClipLibrary.FolderPath(name);
+            if (Directory.Exists(p)) list.Add(p);
+        }
+        return list;
+    }
+
+    private static long SizeOf(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) return new FileInfo(path).Length;
+            return Directory.EnumerateFiles(path, "*", System.IO.SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length);
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>Moves the items into the new folder (a rename on the same drive, copy then delete across drives). Never overwrites. Returns an error text, or null.</summary>
+    private static string? MoveLibrary(List<string> items, string oldDir, string newDir)
+    {
+        string? error = null;
+        try { Directory.CreateDirectory(newDir); } catch (Exception ex) { return ex.Message; }
+
+        void MoveFile(string from, string to)
+        {
+            if (File.Exists(to)) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            try { File.Move(from, to); }
+            catch (IOException) when (File.Exists(from) && !File.Exists(to))
+            {
+                File.Copy(from, to);                       // across drives: copy, then remove the original
+                File.Delete(from);
+            }
+        }
+
+        foreach (var item in items)
+        {
+            try
+            {
+                string rel = Path.GetRelativePath(oldDir, item);
+                if (File.Exists(item)) MoveFile(item, Path.Combine(newDir, rel));
+                else
+                {
+                    foreach (var f in Directory.EnumerateFiles(item, "*", System.IO.SearchOption.AllDirectories).ToList())
+                        MoveFile(f, Path.Combine(newDir, Path.GetRelativePath(oldDir, f)));
+                    try { if (!Directory.EnumerateFileSystemEntries(item).Any()) Directory.Delete(item); } catch { }
+                    Directory.CreateDirectory(Path.Combine(newDir, rel));   // keep empty folders too
+                }
+            }
+            catch (Exception ex) { error ??= $"{Path.GetFileName(item)}: {ex.Message}"; }
+        }
+        return error;
     }
 
     private void HotkeyButton_Click(object sender, RoutedEventArgs e)
@@ -628,7 +734,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // ---- layout / lifetime --------------------------------------------------
 
-    private void Window_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateCardWidth();
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e) { UpdateCardWidth(); UpdateSettingsNav(); }
 
     private void UpdateCardWidth()
     {

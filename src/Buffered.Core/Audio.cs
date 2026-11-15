@@ -117,6 +117,54 @@ internal sealed class FixedFormatCapture : WasapiCapture
 }
 
 /// <summary>
+/// Captures the sound of one program (and its helper processes), or of everything except that program, using Windows' per-program
+/// loopback (Windows 10 version 2004 and later). Presents itself like the other capture classes so a track can use it.
+/// </summary>
+internal sealed class ProcessLoopbackCapture : IWaveIn
+{
+    private readonly uint _pid; private readonly ProcessLoopbackMode _mode;
+    private WasapiRecorder? _recorder; private CancellationTokenSource? _cts; private Task? _pump;
+
+    public ProcessLoopbackCapture(uint pid, ProcessLoopbackMode mode, WaveFormat format) { _pid = pid; _mode = mode; WaveFormat = format; }
+
+    public WaveFormat WaveFormat { get; set; }
+    public event EventHandler<WaveInEventArgs>? DataAvailable;
+    public event EventHandler<StoppedEventArgs>? RecordingStopped;
+
+    public void StartRecording()
+    {
+        _recorder = new WasapiRecorderBuilder().WithProcessLoopback(_pid, _mode).WithFormat(WaveFormat).BuildAsync().GetAwaiter().GetResult();
+        _cts = new CancellationTokenSource();
+        var recorder = _recorder; var token = _cts.Token;
+        _pump = Task.Run(async () =>
+        {
+            Exception? failure = null;
+            try
+            {
+                await foreach (var buf in recorder.CaptureAsync(token))
+                {
+                    var data = buf.Data.ToArray();
+                    DataAvailable?.Invoke(this, new WaveInEventArgs(data, data.Length));
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { failure = ex; }
+            RecordingStopped?.Invoke(this, new StoppedEventArgs(failure));
+        });
+    }
+
+    public void StopRecording() { try { _cts?.Cancel(); } catch { } }
+
+    public void Dispose()
+    {
+        StopRecording();
+        try { _pump?.Wait(1500); } catch { }
+        try { _recorder?.Dispose(); } catch { }
+        _cts?.Dispose();
+    }
+}
+
+/// <summary>
 /// Records one audio source as 48 kHz 16-bit PCM into a RAM ring, time-stamped on the shared timeline.
 /// Loopback capture delivers nothing while the device is silent, so gaps are filled with silence to keep timing exact.
 /// </summary>
@@ -126,12 +174,14 @@ internal sealed class AudioTrack : IDisposable
     private const long GapHns = 400_000; // 40 ms: ignore arrival jitter, fill real gaps
 
     private readonly Timeline _tl;
-    private FixedFormatCapture _cap;
+    private IWaveIn _cap;
     private readonly bool _loopback, _compensate;
     private AudioEndpointVolume? _volume;
     private float _gain = 1f;
     private long _gainAt;
     private readonly int _channels, _frameBytes;
+    private readonly bool _compress;
+    private readonly int _storedBytes;   // bytes held per frame: the same as _frameBytes, or half of it when compressed
     private float _peak;
     private long _peakAt;
     private readonly long _maxFrames;
@@ -150,7 +200,7 @@ internal sealed class AudioTrack : IDisposable
     /// <summary>Receives a copy of every chunk of captured audio (48 kHz, 16-bit). Must return quickly.</summary>
     public Action<byte[]>? Tap { get; set; }
     public int Channels => _channels;
-    public long HeldBytes { get { lock (_lock) return _heldFrames * _frameBytes; } }
+    public long HeldBytes { get { lock (_lock) return _heldFrames * _storedBytes; } }
     public string DeviceId { get; private set; }
     public string DeviceName { get; private set; }
     /// <summary>True if Windows stopped the capture (for example the device was unplugged).</summary>
@@ -159,11 +209,13 @@ internal sealed class AudioTrack : IDisposable
     /// <summary>The recent peak level, 0 to 1, or 0 if nothing has arrived for a moment.</summary>
     public float Level => Environment.TickCount64 - _peakAt > 1500 ? 0 : _peak;
 
-    public AudioTrack(string name, MMDevice device, bool loopback, int channels, Timeline tl, int windowSeconds, bool compensateVolume = false)
+    public AudioTrack(string name, MMDevice device, bool loopback, int channels, Timeline tl, int windowSeconds, bool compensateVolume = false, bool compress = false)
     {
         Name = name; _tl = tl; _channels = channels; _loopback = loopback; _compensate = compensateVolume;
+        _compress = compress;
         _volume = loopback && compensateVolume ? SafeVolume(device) : null;
         _frameBytes = 2 * channels;
+        _storedBytes = compress ? channels : _frameBytes;
         _maxFrames = (long)(windowSeconds + 15) * Rate; // a little more than the video window so cuts always have audio
         DeviceId = device.ID;
         DeviceName = device.FriendlyName;
@@ -171,6 +223,31 @@ internal sealed class AudioTrack : IDisposable
         _cap.DataAvailable += OnData;
         _cap.RecordingStopped += OnStopped;
     }
+
+    /// <summary>True for a track that records one program (or everything except it) instead of a whole output device.</summary>
+    public bool IsProcess { get; }
+
+    /// <summary>A track that records the sound of one program and its helper processes, or of everything except them.</summary>
+    public AudioTrack(string name, uint processId, ProcessLoopbackMode mode, Timeline tl, int windowSeconds, bool compensateVolume, bool compress)
+    {
+        Name = name; _tl = tl; _channels = 2; _loopback = true; _compensate = compensateVolume; _compress = compress; IsProcess = true;
+        // The sound is captured after the Windows volume, as with the speakers, so the same "ignore Windows volume" boost applies.
+        if (compensateVolume)
+        {
+            try { using var en = new MMDeviceEnumerator(); _volumeDevice = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia); _volume = SafeVolume(_volumeDevice); }
+            catch { _volume = null; }
+        }
+        _frameBytes = 4;
+        _storedBytes = compress ? 2 : _frameBytes;
+        _maxFrames = (long)(windowSeconds + 15) * Rate;
+        DeviceId = $"process:{processId}:{mode}";
+        DeviceName = name;
+        _cap = new ProcessLoopbackCapture(processId, mode, new WaveFormat(Rate, 16, 2));
+        _cap.DataAvailable += OnData;
+        _cap.RecordingStopped += OnStopped;
+    }
+
+    private MMDevice? _volumeDevice;
 
     private void OnStopped(object? sender, StoppedEventArgs e) => Stopped = true;
 
@@ -180,6 +257,7 @@ internal sealed class AudioTrack : IDisposable
     /// </summary>
     public void Rebind(MMDevice device)
     {
+        if (IsProcess) { device.Dispose(); return; }
         var next = new FixedFormatCapture(device, _loopback, new WaveFormat(Rate, 16, _channels));
         next.DataAvailable += OnData;
         next.RecordingStopped += OnStopped;
@@ -294,12 +372,12 @@ internal sealed class AudioTrack : IDisposable
 
     private void Append(byte[] data, long frames)
     {
-        _chunks.AddLast(data);
+        _chunks.AddLast(_compress ? MuLaw.Encode(data) : data);
         _framesWritten += frames;
         _heldFrames += frames;
         while (_heldFrames > _maxFrames && _chunks.First is { } first)
         {
-            long f = first.Value.Length / _frameBytes;
+            long f = first.Value.Length / _storedBytes;
             _chunks.RemoveFirst();
             _heldFrames -= f;
             _firstFrameIndex += f;
@@ -338,9 +416,14 @@ internal sealed class AudioTrack : IDisposable
         }
         foreach (var chunk in chunks)
         {
-            long f = chunk.Length / _frameBytes;
+            long f = chunk.Length / _storedBytes;
             if (skip >= f) { skip -= f; continue; }
-            output.Write(chunk, (int)(skip * _frameBytes), chunk.Length - (int)(skip * _frameBytes));
+            if (_compress)
+            {
+                var pcm = MuLaw.Decode(chunk, (int)(skip * _storedBytes));
+                output.Write(pcm, 0, pcm.Length);
+            }
+            else output.Write(chunk, (int)(skip * _frameBytes), chunk.Length - (int)(skip * _frameBytes));
             skip = 0;
         }
     }
@@ -354,5 +437,61 @@ internal sealed class AudioTrack : IDisposable
         _tick?.Join(500);
         _cap.Dispose();
         lock (_lock) _chunks.Clear();
+    }
+}
+
+/// <summary>
+/// G.711 mu-law: stores each 16-bit sample in 8 bits (companded, so quiet sounds keep fine steps and loud ones coarser steps).
+/// Half the memory, almost no CPU, and a faint noise floor under quiet sounds. Each chunk is encoded once when it arrives and
+/// decoded once when a clip is saved.
+/// </summary>
+internal static class MuLaw
+{
+    private const int Bias = 0x84, Clip = 32635;
+    private static readonly short[] DecodeTable = BuildTable();
+
+    private static short[] BuildTable()
+    {
+        var t = new short[256];
+        for (int i = 0; i < 256; i++)
+        {
+            int u = ~i & 0xFF;
+            int sign = u & 0x80, exp = (u >> 4) & 7, mant = u & 0x0F;
+            int s = (((mant << 3) + Bias) << exp) - Bias;
+            t[i] = (short)(sign != 0 ? -s : s);
+        }
+        return t;
+    }
+
+    public static byte[] Encode(byte[] pcm16)
+    {
+        int n = pcm16.Length / 2;
+        var o = new byte[n];
+        for (int i = 0; i < n; i++)
+        {
+            int s = BitConverter.ToInt16(pcm16, i * 2);
+            int sign = (s >> 8) & 0x80;
+            if (sign != 0) s = -s;
+            if (s > Clip) s = Clip;
+            s += Bias;
+            int exp = 7;
+            for (int mask = 0x4000; (s & mask) == 0 && exp > 0; exp--, mask >>= 1) { }
+            int mant = (s >> (exp + 3)) & 0x0F;
+            o[i] = (byte)~(sign | (exp << 4) | mant);
+        }
+        return o;
+    }
+
+    /// <summary>Decodes from a byte offset to the end into 16-bit little-endian samples.</summary>
+    public static byte[] Decode(byte[] stored, int offset)
+    {
+        int n = stored.Length - offset;
+        var o = new byte[n * 2];
+        for (int i = 0; i < n; i++)
+        {
+            short s = DecodeTable[stored[offset + i]];
+            o[i * 2] = (byte)(s & 0xFF); o[i * 2 + 1] = (byte)(s >> 8);
+        }
+        return o;
     }
 }

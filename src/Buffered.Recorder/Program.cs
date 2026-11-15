@@ -10,6 +10,10 @@ static class Program
         // "BufferedRecorder.exe --make-icon <file.ico>" regenerates the app icon (and preview images) from code.
         if (args.Length == 2 && args[0] == "--make-icon") { AppIcon.WriteIco(args[1]); return 0; }
 
+        if (args.Length == 4 && args[0] == "--app-capture") return AppCaptureTest.Run(args[1], int.Parse(args[2]), args[3]);
+
+        if (args.Length >= 3 && args[0] == "--mf-offset") return MfOffsetTest.Run(args[1], args[2], args.Length > 3 ? args[3] : null);
+
         if (args.Length >= 1 && args[0] == "--voice-test")
         {
             try { return VoiceTest.Run(args); }

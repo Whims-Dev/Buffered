@@ -48,9 +48,16 @@ internal sealed class ReplayBuffer
         }
     }
 
+    /// <summary>
+    /// The AAC encoder starts every stream with 1024 samples (21 ms) of warm-up, which MP4 files normally hide with an "edit list".
+    /// VLC obeys edit lists; Windows' media engine (used by the editor and Windows' own players) ignores them and plays the audio
+    /// 21 ms late. Dropping the first 1024 samples before encoding and writing no edit list makes the audio line up everywhere.
+    /// </summary>
+    internal const string AacDelayFix = "atrim=start_sample=1024,asetpts=N/SR/TB";
+
     /// <summary>Writes the buffered video to an MP4 (stream copy, no re-encode). Returns the file path.</summary>
     public string Save(string folder, int fps, string? label = null, double? lastSeconds = null, IReadOnlyList<AudioTrack>? tracks = null, bool separateTracks = false,
-                       double gameDb = 0, double micDb = 0, Action? onCaptured = null)
+                       IReadOnlyDictionary<string, double>? gains = null, IReadOnlySet<string>? outOfMix = null, Action? onCaptured = null)
     {
         Packet[] snapshot;
         lock (_lock) snapshot = _packets.ToArray();
@@ -95,28 +102,30 @@ internal sealed class ReplayBuffer
         }
         args.AddRange(new[] { "-map", "0:v" });
 
-        // With two or more sources the first audio track is a mix of everything. By default it is the ONLY audio track, because
-        // players that offer one track out of several (Windows' own does, and it does not choose the mix) would otherwise
-        // play just one source. The separate Game and Mic tracks are added after the mix only when asked for.
+        // With two or more sources the first audio track is a mix. By default it is the ONLY audio track, because players that offer
+        // one track out of several (Windows' own does, and it does not choose the mix) would otherwise play just one source.
+        // The separate tracks are added after the mix only when asked for.
         int n = pcmFiles.Count;
-        bool mix = n >= 2;
-        bool keepSeparate = n == 1 || (mix && separateTracks);
+        outOfMix ??= new HashSet<string>();
+        bool[] inMix = pcmFiles.Select(p => n < 2 || !outOfMix.Contains(p.Track.Name)).ToArray();   // a single source is always in
+        int inMixCount = inMix.Count(x => x);
+        bool mix = n >= 2 && inMixCount >= 1;
+        bool keepSeparate = n == 1 || (mix && separateTracks) || (n >= 2 && inMixCount == 0);   // never leave a clip without sound
 
-        // The Game and Mic sources are also written to a hidden companion file. It lets the editor change how loud each one is
+        // Every source is also written, one stream each, to a hidden companion file. It lets the editor change how loud each one is
         // in a finished clip, while the clip itself keeps a single audio track that every player plays.
-        int gi = pcmFiles.FindIndex(p => p.Track.Name == "Game"), mi = pcmFiles.FindIndex(p => p.Track.Name == "Mic");
-        bool stems = mix && gi >= 0 && mi >= 0;
+        bool stems = n >= 2;
         string stemsPath = ClipNames.StemsPath(mp4);
 
         // The volume set in Settings is applied once, here; the same adjusted audio goes into the mix and the stems.
         string Db(double v) => v.ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture) + "dB";
-        double GainFor(string name) => name == "Game" ? gameDb : micDb;
+        double GainFor(string name) => gains is not null && gains.TryGetValue(name, out var g) ? g : 0;
 
         var graph = new List<string>();
         for (int i = 0; i < n; i++)
         {
             var uses = new List<string>();
-            if (mix) uses.Add($"[mx{i}]");
+            if (mix && inMix[i]) uses.Add($"[mx{i}]");
             if (keepSeparate) uses.Add($"[sp{i}]");
             if (stems) uses.Add($"[st{i}]");
             if (uses.Count == 0) continue;
@@ -125,15 +134,18 @@ internal sealed class ReplayBuffer
         }
         if (mix)
         {
-            for (int i = 0; i < n; i++) graph.Add($"[mx{i}]aformat=channel_layouts=stereo[ms{i}]");
-            graph.Add($"{string.Concat(Enumerable.Range(0, n).Select(i => $"[ms{i}]"))}amix=inputs={n}:duration=longest:normalize=0,alimiter=limit=0.95[mix]");
+            var members = Enumerable.Range(0, n).Where(i => inMix[i]).ToList();
+            foreach (int i in members) graph.Add($"[mx{i}]aformat=channel_layouts=stereo[ms{i}]");
+            graph.Add($"{string.Concat(members.Select(i => $"[ms{i}]"))}amix=inputs={members.Count}:duration=longest:normalize=0,alimiter=limit=0.95,{AacDelayFix}[mix]");
         }
+        if (keepSeparate)
+            for (int i = 0; i < n; i++) graph.Add($"[sp{i}]{AacDelayFix}[spt{i}]");
         if (graph.Count > 0) args.AddRange(new[] { "-filter_complex", string.Join(";", graph) });
 
         var titles = new List<string>(); // one entry per audio stream in the clip, in order
         if (mix) { args.AddRange(new[] { "-map", "[mix]" }); titles.Add("Mix"); }
         if (keepSeparate)
-            for (int i = 0; i < n; i++) { args.AddRange(new[] { "-map", $"[sp{i}]" }); titles.Add(pcmFiles[i].Track.Name); }
+            for (int i = 0; i < n; i++) { args.AddRange(new[] { "-map", $"[spt{i}]" }); titles.Add(pcmFiles[i].Track.Name); }
 
         args.AddRange(new[] { "-c:v", "copy" });
         // Note: no -shortest. With a raw H.264 input it makes ffmpeg silently drop every audio track.
@@ -147,16 +159,21 @@ internal sealed class ReplayBuffer
         // Written under a hidden temporary name and renamed when complete, so the clip list never shows a half-written file
         // (until ffmpeg finishes, an MP4 with +faststart has no index and can't be read).
         string partial = Path.Combine(folder, $".{stamp}.partial.mp4");
-        args.AddRange(new[] { "-movflags", "+faststart", partial });
+        // No edit list: Windows' media engine (the editor) ignores them, so audio that depends on one plays late. See AacDelayFix.
+        args.AddRange(new[] { "-use_editlist", "0", "-movflags", "+faststart", partial });
 
         if (stems)
         {
-            // Second output of the same run: the stems, Game first and Mic second.
-            args.AddRange(new[] { "-map", $"[st{gi}]", "-map", $"[st{mi}]", "-vn", "-c:a", "aac", "-b:a", "128k",
-                "-metadata:s:a:0", "title=Game", "-metadata:s:a:0", "handler_name=Game",
-                "-metadata:s:a:1", "title=Mic", "-metadata:s:a:1", "handler_name=Mic", "-f", "matroska", stemsPath });
+            // Second output of the same run: every source, in order. "inmix" records whether it is part of the clip's mix.
+            for (int i = 0; i < n; i++) args.AddRange(new[] { "-map", $"[st{i}]" });
+            args.AddRange(new[] { "-vn", "-c:a", "aac", "-b:a", "128k" });
+            for (int i = 0; i < n; i++)
+            {
+                string name = pcmFiles[i].Track.Name;
+                args.AddRange(new[] { $"-metadata:s:a:{i}", $"title={name}", $"-metadata:s:a:{i}", $"handler_name={name}", $"-metadata:s:a:{i}", $"inmix={(inMix[i] ? 1 : 0)}" });
+            }
+            args.AddRange(new[] { "-f", "matroska", stemsPath });
         }
-
         var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Could not start ffmpeg.");

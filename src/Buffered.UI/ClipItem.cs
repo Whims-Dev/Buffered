@@ -147,6 +147,16 @@ public sealed class ClipItem : INotifyPropertyChanged
     private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>One audio source of a clip, as recorded: "Game", "Mic", or a program such as "Discord".</summary>
+public sealed record StemTrack(string Name, bool InMix)
+{
+    /// <summary>A program recorded on its own track (anything other than the game and the microphone).</summary>
+    public bool IsApp => Name is not ("Game" or "Mic");
+}
+
+/// <summary>What the editor changes about a clip's sound: each track's volume, and which tracks are in the mix.</summary>
+public sealed record AudioEdit(IReadOnlyList<string> Names, IReadOnlyList<double> Db, IReadOnlyList<bool> InMix);
+
 /// <summary>Thumbnails and durations come from ffmpeg/ffprobe, cached on disk so each clip is only probed once.</summary>
 internal static class Media
 {
@@ -185,34 +195,85 @@ internal static class Media
         return code == 0 ? output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length : 0;
     }
 
+    private const string ReplayBuffer_AacDelayFix = "atrim=start_sample=1024,asetpts=N/SR/TB";   // see ReplayBuffer.AacDelayFix
+
+    /// <summary>
+    /// How far before the video the first audio packet starts, in seconds (0 for a clip made by this version). Older clips, and clips
+    /// trimmed by older versions, can start their audio a fraction of a second early and rely on an "edit list" to hide it, which
+    /// Windows' media engine ignores.
+    /// </summary>
+    public static async Task<double> AudioLeadSecondsAsync(string clip)
+    {
+        var (code, output) = await RunAsync(Tools.Ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-read_intervals", "%+#1", "-of", "csv=p=0", clip);
+        return code == 0 && double.TryParse(output.Trim().TrimEnd(',').Split('\n')[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s) ? -s : 0;
+    }
+
     private static readonly string PreviewDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Buffered", "preview");
 
     /// <summary>
     /// The editor plays through Windows' media engine, which picks one audio track out of several and not the mix.
     /// For clips with several tracks it plays this copy instead: the same video and the first (mix) track, no re-encoding.
     /// </summary>
-    public static async Task<string?> MakePreviewAsync(string clip)
+    public static async Task<string?> MakePreviewAsync(string clip, bool realign = false)
     {
         Directory.CreateDirectory(PreviewDir);
         string path = System.IO.Path.Combine(PreviewDir, Guid.NewGuid().ToString("N") + ".mp4");
-        var (code, _) = await RunAsync(Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", clip,
-            "-map", "0:v", "-map", "0:a:0", "-c", "copy", "-movflags", "+faststart", path);
+        // Realign: decode the audio (which follows the file's edit list correctly) and encode it again without needing one.
+        var args = realign
+            ? new[] { "-hide_banner", "-loglevel", "error", "-y", "-i", clip, "-map", "0:v", "-map", "0:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                      "-af", ReplayBuffer_AacDelayFix, "-use_editlist", "0", "-movflags", "+faststart", path }
+            : new[] { "-hide_banner", "-loglevel", "error", "-y", "-i", clip, "-map", "0:v", "-map", "0:a:0", "-c", "copy", "-movflags", "+faststart", path };
+        var (code, _) = await RunAsync(Tools.Ffmpeg, args);
         return code == 0 && File.Exists(path) ? path : null;
     }
 
-    /// <summary>A preview with the game and microphone at the given volumes (video copied, audio mixed from the companion file).</summary>
-    public static async Task<string?> MakeBalancedPreviewAsync(string clip, string stems, double gameDb, double micDb)
+    /// <summary>The tracks of a clip's companion file, in order, and whether each is part of the clip's mix.</summary>
+    public static async Task<List<StemTrack>> ReadStemTracksAsync(string stems)
+    {
+        var list = new List<StemTrack>();
+        var (code, output) = await RunAsync(Tools.Ffprobe, "-v", "error", "-select_streams", "a", "-show_entries", "stream_tags", "-of", "json", stems);
+        if (code != 0) return list;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(output);
+            int i = 0;
+            foreach (var s in doc.RootElement.GetProperty("streams").EnumerateArray())
+            {
+                string name = i == 0 ? "Game" : i == 1 ? "Mic" : "Track " + (i + 1);   // older companion files have no names for sure
+                bool inMix = true;
+                if (s.TryGetProperty("tags", out var tags))
+                    foreach (var tag in tags.EnumerateObject())
+                    {
+                        if (tag.Name.Equals("title", StringComparison.OrdinalIgnoreCase) && tag.Value.GetString() is { Length: > 0 } title) name = title;
+                        if (tag.Name.Equals("inmix", StringComparison.OrdinalIgnoreCase)) inMix = tag.Value.GetString() != "0";
+                    }
+                list.Add(new StemTrack(name, inMix));
+                i++;
+            }
+        }
+        catch { list.Clear(); }
+        return list;
+    }
+
+    /// <summary>A preview with each track at the given volume and only the chosen ones in the mix (video copied, audio mixed from the companion file).</summary>
+    public static async Task<string?> MakeBalancedPreviewAsync(string clip, string stems, IReadOnlyList<double> db, IReadOnlyList<bool> inMix)
     {
         Directory.CreateDirectory(PreviewDir);
         string path = System.IO.Path.Combine(PreviewDir, Guid.NewGuid().ToString("N") + ".mp4");
         string Db(double v) => v.ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture) + "dB";
-        var (code, _) = await RunAsync(Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", clip, "-i", stems, "-filter_complex",
-            $"[1:a:0]volume={Db(gameDb)},aformat=channel_layouts=stereo[g];[1:a:1]volume={Db(micDb)},aformat=channel_layouts=stereo[m];" +
-            "[g][m]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[mix]",
-            "-map", "0:v", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", path);
+        var members = Enumerable.Range(0, db.Count).Where(i => inMix[i]).ToList();
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-i", clip, "-i", stems };
+        if (members.Count == 0) args.AddRange(new[] { "-map", "0:v", "-c:v", "copy", "-an", "-movflags", "+faststart", path });
+        else
+        {
+            string graph = string.Join(";", members.Select(i => $"[1:a:{i}]volume={Db(db[i])},aformat=channel_layouts=stereo[t{i}]")) + ";" +
+                           string.Concat(members.Select(i => $"[t{i}]")) +
+                           $"amix=inputs={members.Count}:duration=longest:normalize=0,alimiter=limit=0.95,{ReplayBuffer_AacDelayFix}[mix]";
+            args.AddRange(new[] { "-filter_complex", graph, "-map", "0:v", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-use_editlist", "0", "-movflags", "+faststart", path });
+        }
+        var (code, _) = await RunAsync(Tools.Ffmpeg, args.ToArray());
         return code == 0 && File.Exists(path) ? path : null;
     }
-
     public static void CleanPreviews()
     {
         try { if (Directory.Exists(PreviewDir)) foreach (var f in Directory.EnumerateFiles(PreviewDir)) { try { File.Delete(f); } catch { } } }
