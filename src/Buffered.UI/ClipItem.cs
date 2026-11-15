@@ -35,8 +35,36 @@ public sealed class ClipItem : INotifyPropertyChanged
         Tint.Freeze();
     }
 
-    public string Title => Label;
-    public string Subtitle => $"{FriendlyDate(When)} Â· {FormatSize(Size)}";
+    /// <summary>What the card shows: the name you gave the clip, or the game it came from.</summary>
+    public string Title => string.IsNullOrWhiteSpace(Name) ? Label : Name!;
+    public string Subtitle => $"{FriendlyDate(When)} · {FormatSize(Size)}";
+
+    /// <summary>The folder this clip is in ("" for the top level).</summary>
+    public string Folder => ClipLibrary.FolderOf(Path);
+
+    public string? Name
+    {
+        get => ClipLibrary.Get(Path).Name;
+        set { ClipLibrary.Update(Path, m => m.Name = string.IsNullOrWhiteSpace(value) ? null : value!.Trim()); Raise(nameof(Name)); Raise(nameof(Title)); Raise(nameof(Tip)); }
+    }
+
+    public string? Note
+    {
+        get => ClipLibrary.Get(Path).Note;
+        set { ClipLibrary.Update(Path, m => m.Note = string.IsNullOrWhiteSpace(value) ? null : value!.Trim()); Raise(nameof(Note)); Raise(nameof(Tip)); }
+    }
+
+    public bool IsFavorite
+    {
+        get => ClipLibrary.Get(Path).Favorite;
+        set { ClipLibrary.Update(Path, m => m.Favorite = value); Raise(nameof(IsFavorite)); }
+    }
+
+    /// <summary>The hover text of a card: the note, if there is one.</summary>
+    public string? Tip => Note is { Length: > 0 } n ? n : null;
+
+    private bool _selected;
+    public bool IsSelected { get => _selected; set { if (_selected == value) return; _selected = value; Raise(nameof(IsSelected)); } }
 
     public string Duration { get => _duration; private set { _duration = value; Raise(nameof(Duration)); } }
     public ImageSource? Thumb { get => _thumb; private set { _thumb = value; Raise(nameof(Thumb)); } }

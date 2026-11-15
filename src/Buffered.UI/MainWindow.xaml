@@ -6,6 +6,30 @@
         WindowStartupLocation="CenterScreen" ThemeMode="System"
         SizeChanged="Window_SizeChanged" Closed="Window_Closed">
     <Window.Resources>
+        <!-- A row in the folder list on the left of the clips page -->
+        <Style x:Key="RailItem" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bg" CornerRadius="6" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/></Trigger>
+                            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- Long device names end in an ellipsis (full name on hover) instead of being cut off -->
         <DataTemplate x:Key="TrimmedLabel">
             <TextBlock Text="{Binding Label}" ToolTip="{Binding Label}" TextTrimming="CharacterEllipsis"/>
@@ -36,12 +60,51 @@
         <!-- Pages -->
         <Grid Grid.Row="0" Grid.Column="1">
             <!-- Clips -->
-            <Grid x:Name="ClipsPage" Margin="26,20,26,0">
+            <Grid x:Name="ClipsPage">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="188"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+
+              <!-- Folders -->
+              <Border Grid.Column="0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="0,0,1,0" Padding="10,20,10,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <StackPanel>
+                    <StackPanel x:Name="RailTop"/>
+                    <Grid Margin="10,16,0,4">
+                        <TextBlock Text="Folders" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                        <Button HorizontalAlignment="Right" Width="28" Height="28" MinHeight="0" Padding="0" Background="Transparent" BorderBrush="Transparent"
+                                FontFamily="{StaticResource IconFont}" Content="&#xE8F4;" FontSize="14" ToolTip="New folder" AutomationProperties.Name="New folder" Click="NewFolder_Click"/>
+                    </Grid>
+                    <StackPanel x:Name="RailFolders"/>
+                  </StackPanel>
+                </ScrollViewer>
+              </Border>
+
+              <Grid Grid.Column="1" Margin="26,20,26,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
+
+                <!-- Shown instead of the title and search while clips are selected -->
+                <Grid x:Name="SelectionBar" Grid.Row="0" Margin="0,0,0,16" Height="50" Visibility="Collapsed" Panel.ZIndex="2" Background="{DynamicResource ApplicationBackgroundBrush}">
+                    <TextBlock x:Name="SelectionText" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button x:Name="SelFavorite" Height="36" Padding="14,0" Margin="0,0,8,0" Click="SelFavorite_Click" AutomationProperties.Name="Favorite">
+                            <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE734;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock x:Name="SelFavoriteLabel" Text="Favorite" VerticalAlignment="Center"/></StackPanel>
+                        </Button>
+                        <Button x:Name="SelMove" Height="36" Padding="14,0" Margin="0,0,8,0" Click="SelMove_Click" AutomationProperties.Name="Move to folder">
+                            <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE8DA;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock Text="Move to" VerticalAlignment="Center"/></StackPanel>
+                        </Button>
+                        <Button Height="36" Padding="14,0" Margin="0,0,8,0" Click="SelDelete_Click" AutomationProperties.Name="Delete selected">
+                            <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE74D;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock Text="Delete" VerticalAlignment="Center"/></StackPanel>
+                        </Button>
+                        <Button Width="36" Height="36" Padding="0" Click="SelClear_Click" ToolTip="Clear selection" AutomationProperties.Name="Clear selection"
+                                FontFamily="{StaticResource IconFont}" Content="&#xE711;" FontSize="13"/>
+                    </StackPanel>
+                </Grid>
 
                 <Grid Grid.Row="0" Margin="0,0,0,16">
                     <Grid.ColumnDefinitions>
@@ -72,7 +135,8 @@
                 <StackPanel x:Name="FilterPanel" Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16"/>
 
                 <Grid Grid.Row="2">
-                    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" Background="Transparent"
+                                  PreviewMouseLeftButtonDown="Scroller_Down" PreviewMouseMove="Scroller_Move" PreviewMouseLeftButtonUp="Scroller_Up">
                         <ItemsControl x:Name="GroupList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -84,32 +148,61 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <StackPanel Width="{Binding DataContext.CardWidth, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,14,18">
+                                                    <StackPanel x:Name="CardRoot" Width="{Binding DataContext.CardWidth, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,14,18">
                                                         <Border x:Name="Thumb" CornerRadius="8" Background="{Binding Tint}" Cursor="Hand" ClipToBounds="True"
                                                                 Height="{Binding DataContext.CardHeight, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                MouseLeftButtonUp="Card_Click">
+                                                                MouseLeftButtonDown="Card_Down" MouseMove="Card_Move" MouseLeftButtonUp="Card_Click" MouseRightButtonUp="Card_RightClick">
                                                             <Grid>
                                                                 <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
+                                                                <Border x:Name="SelRing" BorderThickness="3" CornerRadius="8" Visibility="Collapsed" IsHitTestVisible="False"
+                                                                        BorderBrush="{DynamicResource AccentFillColorDefaultBrush}" Background="#22FFFFFF"/>
+                                                                <Border x:Name="SelDot" Width="24" Height="24" CornerRadius="12" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Opacity="0"
+                                                                        Background="#80000000" BorderBrush="#CCFFFFFF" BorderThickness="1.5" Cursor="Hand" MouseLeftButtonUp="Check_Click">
+                                                                    <TextBlock x:Name="SelTick" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="White" Visibility="Collapsed"
+                                                                               HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                                                </Border>
                                                                 <TextBlock x:Name="PlayGlyph" Text="&#xE768;" FontFamily="{StaticResource IconFont}" FontSize="28" Foreground="White"
                                                                            HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0" IsHitTestVisible="False"/>
                                                                 <Border CornerRadius="4" Padding="6,3" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#B8000000" IsHitTestVisible="False">
                                                                     <TextBlock Text="{Binding Duration}" FontSize="11" Foreground="White"/>
                                                                 </Border>
-                                                                <StackPanel x:Name="Overlay" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Opacity="0">
-                                                                    <Button Style="{StaticResource OverlayButton}" Content="&#xE8A7;" ToolTip="Open in your default player" AutomationProperties.Name="Open externally" Click="External_Click"/>
-                                                                    <Button Style="{StaticResource OverlayButton}" Content="&#xE8B7;" ToolTip="Show in folder" AutomationProperties.Name="Show in folder" Click="Folder_Click"/>
-                                                                    <Button Style="{StaticResource OverlayButton}" Content="&#xE74D;" ToolTip="Delete" AutomationProperties.Name="Delete" Click="Delete_Click"/>
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8">
+                                                                    <StackPanel x:Name="Overlay" Orientation="Horizontal" Opacity="0">
+                                                                        <Button Style="{StaticResource OverlayButton}" Content="&#xE8A7;" ToolTip="Open in your default player" AutomationProperties.Name="Open externally" Click="External_Click"/>
+                                                                        <Button Style="{StaticResource OverlayButton}" Content="&#xE8B7;" ToolTip="Show in folder" AutomationProperties.Name="Show in folder" Click="Folder_Click"/>
+                                                                        <Button Style="{StaticResource OverlayButton}" Content="&#xE74D;" ToolTip="Delete" AutomationProperties.Name="Delete" Click="Delete_Click"/>
+                                                                    </StackPanel>
+                                                                    <Button x:Name="StarBtn" Style="{StaticResource OverlayButton}" Content="&#xE734;" Opacity="0" ToolTip="Favorite" AutomationProperties.Name="Favorite" Click="Star_Click"/>
                                                                 </StackPanel>
                                                             </Grid>
                                                         </Border>
-                                                        <TextBlock Text="{Binding Title}" FontSize="13" Margin="1,9,0,0" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Title}" ToolTip="{Binding Tip}" FontSize="13" Margin="1,9,0,0" TextTrimming="CharacterEllipsis"/>
                                                         <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Caption}" Margin="1,5,0,0" TextTrimming="CharacterEllipsis"/>
                                                     </StackPanel>
                                                     <DataTemplate.Triggers>
                                                         <Trigger SourceName="Thumb" Property="IsMouseOver" Value="True">
                                                             <Setter TargetName="Overlay" Property="Opacity" Value="1"/>
                                                             <Setter TargetName="PlayGlyph" Property="Opacity" Value="0.92"/>
+                                                            <Setter TargetName="SelDot" Property="Opacity" Value="1"/>
+                                                            <Setter TargetName="StarBtn" Property="Opacity" Value="1"/>
                                                         </Trigger>
+                                                        <DataTrigger Binding="{Binding DataContext.HasSelection, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                            <Setter TargetName="SelDot" Property="Opacity" Value="1"/>
+                                                            <Setter TargetName="PlayGlyph" Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter TargetName="SelRing" Property="Visibility" Value="Visible"/>
+                                                            <Setter TargetName="SelDot" Property="Opacity" Value="1"/>
+                                                            <Setter TargetName="SelDot" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                                            <Setter TargetName="SelDot" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                                            <Setter TargetName="SelTick" Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                            <Setter TargetName="StarBtn" Property="Opacity" Value="1"/>
+                                                            <Setter TargetName="StarBtn" Property="Content" Value="&#xE735;"/>
+                                                            <Setter TargetName="StarBtn" Property="Foreground" Value="#F2C14E"/>
+                                                            <Setter TargetName="StarBtn" Property="ToolTip" Value="Remove from favorites"/>
+                                                        </DataTrigger>
                                                     </DataTemplate.Triggers>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -123,7 +216,12 @@
                         <TextBlock x:Name="EmptyTitle" Text="Save your first clip" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                         <TextBlock x:Name="EmptyBody" Opacity="0.7" Margin="0,8,0,0" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
                     </StackPanel>
+                    <Canvas x:Name="BandLayer" IsHitTestVisible="False">
+                        <Border x:Name="Band" Visibility="Collapsed" BorderThickness="1" CornerRadius="2"
+                                BorderBrush="{DynamicResource AccentFillColorDefaultBrush}" Background="#334C8DF0"/>
+                    </Canvas>
                 </Grid>
+              </Grid>
             </Grid>
 
             <!-- Settings -->

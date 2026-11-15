@@ -50,7 +50,7 @@ internal sealed class ReplayBuffer
 
     /// <summary>Writes the buffered video to an MP4 (stream copy, no re-encode). Returns the file path.</summary>
     public string Save(string folder, int fps, string? label = null, double? lastSeconds = null, IReadOnlyList<AudioTrack>? tracks = null, bool separateTracks = false,
-                       double gameDb = 0, double micDb = 0)
+                       double gameDb = 0, double micDb = 0, Action? onCaptured = null)
     {
         Packet[] snapshot;
         lock (_lock) snapshot = _packets.ToArray();
@@ -82,6 +82,10 @@ internal sealed class ReplayBuffer
                 File.WriteAllBytes(pcm, tracks[t].Extract(videoStartHns));
                 pcmFiles.Add((pcm, tracks[t]));
             }
+
+        // Everything that goes into the clip has now been copied out of memory. Anything that happens from here on
+        // (like the save sound) is not part of the clip.
+        onCaptured?.Invoke();
 
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-f", "h264", "-framerate", fps.ToString(), "-i", raw };
         foreach (var (path, track) in pcmFiles)

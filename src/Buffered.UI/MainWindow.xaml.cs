@@ -88,10 +88,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             if (!Directory.Exists(_settings.OutDir)) return;
-            foreach (var s in Directory.EnumerateFiles(_settings.OutDir, ".*.stems.mka"))
+            foreach (var s in Directory.EnumerateFiles(_settings.OutDir, ".*.stems.mka", System.IO.SearchOption.AllDirectories))
             {
                 string name = Path.GetFileName(s);                               // ".Label_2026-...stems.mka"
-                string clip = Path.Combine(_settings.OutDir, name[1..^".stems.mka".Length] + ".mp4");
+                string clip = Path.Combine(Path.GetDirectoryName(s)!, name[1..^".stems.mka".Length] + ".mp4");
                 if (!File.Exists(clip)) { try { File.Delete(s); } catch { } }
             }
         }
@@ -101,11 +101,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void LoadClips()
     {
         var dir = _settings.OutDir;
-        var known = _allClips.ToDictionary(c => c.Path);
+        ClipLibrary.Use(dir);
+        var known = _allClips.ToDictionary(c => c.Path, StringComparer.OrdinalIgnoreCase);
         var fresh = new List<ClipItem>();
 
-        if (Directory.Exists(dir))
-            foreach (var f in Directory.EnumerateFiles(dir, "*.mp4"))
+        // Clips live in the folder itself or in one level of folders inside it.
+        var places = new List<string> { dir };
+        if (Directory.Exists(dir)) places.AddRange(ClipLibrary.Folders().Select(ClipLibrary.FolderPath));
+        foreach (var place in places.Where(Directory.Exists))
+            foreach (var f in Directory.EnumerateFiles(place, "*.mp4"))
             {
                 if (Path.GetFileName(f).StartsWith('.')) continue;
                 try
@@ -118,8 +122,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _allClips.Clear();
         _allClips.AddRange(fresh.OrderByDescending(c => c.When));
+        _sel.RemoveWhere(c => !_allClips.Contains(c));
+        if (_view.StartsWith("dir:") && !ClipLibrary.Folders().Contains(_view[4..], StringComparer.OrdinalIgnoreCase)) _view = "all";
         RebuildFilters();
+        RebuildRail();
         ApplyFilter();
+        SelectionChanged();
     }
 
     private void RebuildFilters()
@@ -139,8 +147,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ApplyFilter()
     {
         string q = SearchBox.Text.Trim();
-        var shown = _allClips.Where(c => (_filter == "All" || c.Label == _filter) &&
-                                         (q.Length == 0 || c.Label.Contains(q, StringComparison.OrdinalIgnoreCase))).ToList();
+        var inView = _view switch
+        {
+            "fav" => _allClips.Where(c => c.IsFavorite),
+            "none" => _allClips.Where(c => c.Folder.Length == 0),
+            var v when v.StartsWith("dir:") => _allClips.Where(c => c.Folder.Equals(v[4..], StringComparison.OrdinalIgnoreCase)),
+            _ => _allClips.AsEnumerable(),
+        };
+        var shown = inView.Where(c => (_filter == "All" || c.Label == _filter) &&
+                                      (q.Length == 0 || c.Title.Contains(q, StringComparison.OrdinalIgnoreCase) || c.Label.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                       (c.Note?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false))).ToList();
+        _shown = shown;
 
         GroupList.ItemsSource = shown.GroupBy(c => c.When.Date).OrderByDescending(g => g.Key)
                                      .Select(g => new ClipGroup(ClipItem.FriendlyDay(g.Key), g.ToList())).ToList();
@@ -151,9 +168,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         bool none = _allClips.Count == 0;
         EmptyState.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Scroller.Visibility = shown.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        EmptyTitle.Text = none ? "Save your first clip" : "No clips match";
+        EmptyTitle.Text = none ? "Save your first clip" : _view == "none" && q.Length == 0 ? "Everything is in a folder" : _view == "fav" && q.Length == 0 ? "No favorites yet" : _view.StartsWith("dir:") && q.Length == 0 ? "This folder is empty" : "No clips match";
         EmptyBody.Text = none
             ? $"Press {_settings.Hotkey} while you play to keep the last {FormatBuffer(_settings.BufferSeconds)}."
+            : _view == "none" && q.Length == 0 ? "New clips land here until you move them into a folder."
+            : _view == "fav" && q.Length == 0 ? "Star a clip to keep it here and protect it from delete."
+            : _view.StartsWith("dir:") && q.Length == 0 ? "Drag clips onto the folder, or use Move to."
             : "Try a different search or filter.";
     }
 
@@ -161,15 +181,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _watcher?.Dispose();
         Directory.CreateDirectory(_settings.OutDir);
-        _watcher = new FileSystemWatcher(_settings.OutDir, "*.mp4") { EnableRaisingEvents = true };
-        void Queue(object _, FileSystemEventArgs __) => Dispatcher.BeginInvoke(() => { _refreshTimer.Stop(); _refreshTimer.Start(); });
+        _watcher = new FileSystemWatcher(_settings.OutDir) { IncludeSubdirectories = true, EnableRaisingEvents = true };
+        void Queue(object _, FileSystemEventArgs e)
+        {
+            // Clips and folders matter; the hidden library file, thumbnails and companion files don't.
+            var name = e.Name ?? "";
+            var leaf = Path.GetFileName(name);
+            if (leaf.StartsWith('.') || !(leaf.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) || !leaf.Contains('.'))) return;
+            Dispatcher.BeginInvoke(() => { _refreshTimer.Stop(); _refreshTimer.Start(); });
+        }
         _watcher.Created += Queue; _watcher.Deleted += Queue; _watcher.Renamed += (s, e) => Queue(s, e);
-    }
-
-    private void Card_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (e.Handled) return;
-        if (((FrameworkElement)sender).DataContext is ClipItem c && File.Exists(c.Path)) OpenPlayer(c);
     }
 
     private void OpenPlayer(ClipItem clip, (double Start, double End)? select = null)
@@ -196,19 +217,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (((FrameworkElement)sender).DataContext is not ClipItem c) return;
-        bool yes = await Dialogs.ConfirmAsync("Move this clip to the Recycle Bin?",
-            $"\"{c.Title}\" ({ClipItem.SizeText(c.Size)}, {c.When:MMM d, h:mm tt}) will be moved to the Recycle Bin. You can restore it from there.",
-            "Move to Recycle Bin", danger: true);
-        if (!yes) return;
-        try
-        {
-            FileSystem.DeleteFile(c.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-            var stems = ClipNames.StemsPath(c.Path); // the hidden companion file goes with its clip
-            if (File.Exists(stems)) File.Delete(stems);
-        }
-        catch (Exception ex) { await Dialogs.MessageAsync("Couldn't delete this clip", ex.Message); }
-        LoadClips();
+        if (((FrameworkElement)sender).DataContext is ClipItem c) await DeleteAsync(new List<ClipItem> { c });
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)

@@ -183,11 +183,11 @@ public sealed class RecorderEngine : IDisposable
     }
 
     /// <summary>Writes the buffered video and audio to an MP4 in the output folder and returns its path.</summary>
-    public string SaveClip(string? label = null, double? lastSeconds = null)
+    public string SaveClip(string? label = null, double? lastSeconds = null, Action? onCaptured = null)
     {
         if (_buffer is null) throw new InvalidOperationException("The recorder is not running.");
         AudioTrack[] tracks; lock (_audioLock) tracks = _tracks.ToArray();
-        return _buffer.Save(_s.OutDir, _fps, label, lastSeconds, tracks, _s.SeparateTracks, _s.GameGainDb, _s.MicGainDb);
+        return _buffer.Save(_s.OutDir, _fps, label, lastSeconds, tracks, _s.SeparateTracks, _s.GameGainDb, _s.MicGainDb, onCaptured);
     }
 
     public void Dispose()

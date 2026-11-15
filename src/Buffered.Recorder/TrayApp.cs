@@ -183,11 +183,11 @@ sealed class TrayApp : ApplicationContext
         if (_targetFlips >= 2) Relaunch(false);
     }
 
-    private string? DoSave()
+    private string? DoSave(Action? onCaptured = null)
     {
         RecorderEngine? e; lock (_engineLock) e = _engine;
         if (e is null) throw new InvalidOperationException(_paused ? "Recording is paused." : _error ?? "The recorder is not running.");
-        return _lastClip = e.SaveClip(ForegroundApp.Current() ?? _lastApp);
+        return _lastClip = e.SaveClip(ForegroundApp.Current() ?? _lastApp, onCaptured: onCaptured);
     }
 
     private void SaveClip()
@@ -198,13 +198,14 @@ sealed class TrayApp : ApplicationContext
         {
             try
             {
-                DoSave();
-                if (_settings.SaveSound) SystemSounds.Asterisk.Play();
+                // The sound plays the moment the clip's contents are captured (a fraction of a second after the key press),
+                // not after the file is finished, and after the capture so it can't end up in the clip.
+                DoSave(() => { if (_settings.SaveSound) Sounds.PlaySaved(); });
                 Flash(_iconSaved);
             }
             catch
             {
-                if (_settings.SaveSound) SystemSounds.Exclamation.Play();
+                if (_settings.SaveSound) Sounds.PlayFailed();
                 Flash(_iconFailed);
             }
             finally { _saving = false; }

@@ -190,9 +190,19 @@ public partial class ClipPlayer : UserControl
 
     // ---- playback ----------------------------------------------------------
 
-    private void Video_MediaOpened(object sender, RoutedEventArgs e)
+    private async void Video_MediaOpened(object sender, RoutedEventArgs e)
     {
         _duration = Video.NaturalDuration.HasTimeSpan ? Video.NaturalDuration.TimeSpan.TotalSeconds : 0;
+
+        // Windows' media engine reports the length in whole seconds (a 23.67 s clip comes back as 23 s) even though it plays all of it,
+        // so the time readout would run past its own total. The file knows its real length.
+        var src = Video.Source;
+        if (src is { IsFile: true })
+        {
+            var real = await Media.GetDurationSecondsAsync(src.LocalPath);
+            if (Video.Source != src) return;                       // another clip was opened meanwhile
+            if (real is { } d && d >= _duration && d - _duration < 1.0) _duration = d;
+        }
 
         // A source swap for new volumes: keep the trim handles and carry on from the same spot.
         if (_resume is { } r)

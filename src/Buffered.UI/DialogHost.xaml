@@ -11,6 +11,8 @@
                 <StackPanel>
                     <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
                     <TextBlock x:Name="MessageText" Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.75" LineHeight="20"/>
+                    <TextBox x:Name="InputBox" Margin="0,14,0,0" Height="34" VerticalContentAlignment="Center" Visibility="Collapsed" AutomationProperties.Name="Name"/>
+                    <CheckBox x:Name="OptionBox" Margin="0,14,0,0" Visibility="Collapsed"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
                         <Button x:Name="CancelButton" Height="34" MinWidth="84" Padding="14,0" Margin="0,0,8,0" Click="Cancel_Click"/>
                         <Button x:Name="ConfirmButton" Height="34" MinWidth="84" Padding="14,0" Click="Confirm_Click"/>
