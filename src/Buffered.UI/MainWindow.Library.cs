@@ -172,12 +172,16 @@ public partial class MainWindow
         return list;
     }
 
+    private readonly System.Windows.Threading.DispatcherTimer _bandTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private List<(ClipItem Clip, Rect Bounds)> _bandCards = new();   // every card's position in the scrolled content, measured once per drag
+    private bool _bandTimerHooked;
+
     private void Scroller_Down(object sender, MouseButtonEventArgs e)
     {
         if (CardRootOf(e.OriginalSource as DependencyObject) is not null || Ancestor<ScrollBar>(e.OriginalSource as DependencyObject) is not null) return;
         var p = e.GetPosition(BandLayer);
         _bandPending = true; _bandActive = false;
-        _bandStart = new Point(p.X, p.Y + Scroller.VerticalOffset);
+        _bandStart = new Point(p.X, p.Y + Scroller.VerticalOffset);   // y is measured in the scrolled content, so it stays put while the list scrolls
         _bandBase = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ? new HashSet<ClipItem>(_sel) : new HashSet<ClipItem>();
     }
 
@@ -186,34 +190,55 @@ public partial class MainWindow
         if (!_bandPending) return;
         if (e.LeftButton != MouseButtonState.Pressed) { EndBand(); return; }
 
-        var p = e.GetPosition(BandLayer);
-        double startY = _bandStart.Y - Scroller.VerticalOffset;
         if (!_bandActive)
         {
-            if (Math.Abs(p.X - _bandStart.X) + Math.Abs(p.Y - startY) < 5) return;
+            var p = e.GetPosition(BandLayer);
+            if (Math.Abs(p.X - _bandStart.X) + Math.Abs(p.Y - (_bandStart.Y - Scroller.VerticalOffset)) < 5) return;
             _bandActive = true;
             Scroller.CaptureMouse();
             Band.Visibility = Visibility.Visible;
+
+            // Measure every card once, in content coordinates, so the drag can be answered quickly and correctly while the list scrolls.
+            double off = Scroller.VerticalOffset;
+            _bandCards = CardRoots().Where(c => c.DataContext is ClipItem).Select(c =>
+            {
+                var r = c.TransformToVisual(BandLayer).TransformBounds(new Rect(0, 0, c.ActualWidth, c.ActualHeight));
+                r.Offset(0, off);
+                return ((ClipItem)c.DataContext, r);
+            }).ToList();
+
+            if (!_bandTimerHooked) { _bandTimer.Tick += (_, _) => UpdateBand(); _bandTimerHooked = true; }
+            _bandTimer.Start();   // keeps scrolling while the pointer rests near an edge, even without mouse movement
         }
+        UpdateBand();
+    }
 
-        // Scroll when the pointer is near the top or bottom edge.
-        if (p.Y < 24) Scroller.ScrollToVerticalOffset(Scroller.VerticalOffset - 18);
-        else if (p.Y > BandLayer.ActualHeight - 24) Scroller.ScrollToVerticalOffset(Scroller.VerticalOffset + 18);
-        startY = _bandStart.Y - Scroller.VerticalOffset;
+    /// <summary>Scrolls if the pointer is near (or past) the top or bottom edge, then redraws the band and selects what it covers.</summary>
+    private void UpdateBand()
+    {
+        if (!_bandActive) return;
+        var p = Mouse.GetPosition(BandLayer);
+        double h = BandLayer.ActualHeight, w = BandLayer.ActualWidth;
 
-        double x1 = Math.Clamp(Math.Min(_bandStart.X, p.X), 0, BandLayer.ActualWidth), x2 = Math.Clamp(Math.Max(_bandStart.X, p.X), 0, BandLayer.ActualWidth);
-        double y1 = Math.Clamp(Math.Min(startY, p.Y), 0, BandLayer.ActualHeight), y2 = Math.Clamp(Math.Max(startY, p.Y), 0, BandLayer.ActualHeight);
-        Canvas.SetLeft(Band, x1); Canvas.SetTop(Band, y1);
-        Band.Width = Math.Max(0, x2 - x1); Band.Height = Math.Max(0, y2 - y1);
-        var rect = new Rect(x1, y1, Band.Width, Band.Height);
+        const double zone = 48;
+        double dy = 0;
+        if (p.Y < zone) dy = -Math.Min(2.5, (zone - p.Y) / zone) * 26;
+        else if (p.Y > h - zone) dy = Math.Min(2.5, (p.Y - (h - zone)) / zone) * 26;
+        if (dy != 0) { Scroller.ScrollToVerticalOffset(Scroller.VerticalOffset + dy); Scroller.UpdateLayout(); }
 
+        double off = Scroller.VerticalOffset;
+        double cx = Math.Clamp(p.X, 0, w), cy = p.Y + off;                         // the pointer in content coordinates
+        var rect = new Rect(new Point(Math.Min(_bandStart.X, cx), Math.Min(_bandStart.Y, cy)),
+                            new Point(Math.Max(_bandStart.X, cx), Math.Max(_bandStart.Y, cy)));
+
+        // Draw only the part of the band that is on screen.
+        double vTop = Math.Clamp(rect.Top - off, 0, h), vBottom = Math.Clamp(rect.Bottom - off, 0, h);
+        Canvas.SetLeft(Band, Math.Clamp(rect.Left, 0, w)); Canvas.SetTop(Band, vTop);
+        Band.Width = Math.Max(0, Math.Clamp(rect.Right, 0, w) - Math.Clamp(rect.Left, 0, w)); Band.Height = Math.Max(0, vBottom - vTop);
+
+        // Everything the band has covered since the drag began counts, including cards that have scrolled out of view.
         var hit = new HashSet<ClipItem>(_bandBase);
-        foreach (var card in CardRoots())
-        {
-            if (card.DataContext is not ClipItem c) continue;
-            var bounds = card.TransformToVisual(BandLayer).TransformBounds(new Rect(0, 0, card.ActualWidth, card.ActualHeight));
-            if (bounds.IntersectsWith(rect)) hit.Add(c);
-        }
+        foreach (var (clip, bounds) in _bandCards) if (bounds.IntersectsWith(rect)) hit.Add(clip);
         if (!hit.SetEquals(_sel)) SetSelection(hit);
     }
 
@@ -226,11 +251,12 @@ public partial class MainWindow
 
     private void EndBand()
     {
+        _bandTimer.Stop();
         _bandPending = false; _bandActive = false;
+        _bandCards = new();
         Band.Visibility = Visibility.Collapsed;
         if (Scroller.IsMouseCaptured) Scroller.ReleaseMouseCapture();
     }
-
     // ---- folder list --------------------------------------------------------
 
     private void RebuildRail()

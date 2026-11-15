@@ -10,6 +10,12 @@ static class Program
         // "BufferedRecorder.exe --make-icon <file.ico>" regenerates the app icon (and preview images) from code.
         if (args.Length == 2 && args[0] == "--make-icon") { AppIcon.WriteIco(args[1]); return 0; }
 
+        if (args.Length >= 1 && args[0] == "--voice-test")
+        {
+            try { return VoiceTest.Run(args); }
+            catch (Exception ex) { File.WriteAllText(Path.Combine(Path.GetTempPath(), "voice_error.txt"), ex.ToString()); return 1; }
+        }
+
         // "BufferedRecorder.exe --test-sounds" plays the saved and failed sounds once each.
         if (args.Length == 1 && args[0] == "--test-sounds")
         {

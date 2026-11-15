@@ -88,6 +88,7 @@ sealed class TrayApp : ApplicationContext
                 _engine = new RecorderEngine(_settings);
                 _engine.Start();
                 _engine.NeedsRestart += reason => { if (!_paused && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
+                _engine.VoicePhrase += _ => { if (!_paused && !_quit) _sync.BeginInvoke(SaveClip); }; // "clip that" does the same as the hotkey
                 _error = null;
                 _tray.Icon = _iconOn;
                 _status.Text = "Recording";
@@ -282,6 +283,11 @@ sealed class TrayApp : ApplicationContext
         _settings.SeparateTracks = s.SeparateTracks;
         _settings.SaveSound = s.SaveSound;
         _settings.KeepWindowVisible = s.KeepWindowVisible;
+        bool voiceChanged = _settings.VoiceClip != s.VoiceClip || _settings.VoicePhrases != s.VoicePhrases || _settings.VoiceConfidence != s.VoiceConfidence
+            || _settings.VoiceDictationWeight != s.VoiceDictationWeight || _settings.VoiceFuzzy != s.VoiceFuzzy || _settings.VoiceForcedConfidence != s.VoiceForcedConfidence;
+        _settings.VoiceClip = s.VoiceClip; _settings.VoicePhrases = s.VoicePhrases; _settings.VoiceConfidence = s.VoiceConfidence;
+        _settings.VoiceDictationWeight = s.VoiceDictationWeight; _settings.VoiceFuzzy = s.VoiceFuzzy; _settings.VoiceForcedConfidence = s.VoiceForcedConfidence;
+        if (voiceChanged) { RecorderEngine? e; lock (_engineLock) e = _engine; e?.ConfigureVoice(); } // starts or stops listening; the buffer is kept
         if (_settings.Hotkey != s.Hotkey)
         {
             _settings.Hotkey = s.Hotkey;
@@ -313,7 +319,8 @@ sealed class TrayApp : ApplicationContext
         return e is null
             ? new RecorderStatus(false, 0, _settings.BufferSeconds, 0, _vram, _cpuPct, 0, 0, 0, "", _error, _paused)
             : new RecorderStatus(true, e.BufferedSeconds, _settings.BufferSeconds, (e.BufferedBytes + e.AudioBytes) / 1048576.0, _vram, _cpuPct,
-                                 e.OutputWidth, e.OutputHeight, e.Fps, e.Monitor?.ToString() ?? "", null, false, e.AudioDescription, e.GameLevel, e.MicLevel, e.SourceName);
+                                 e.OutputWidth, e.OutputHeight, e.Fps, e.Monitor?.ToString() ?? "", null, false, e.AudioDescription, e.GameLevel, e.MicLevel, e.SourceName,
+                                 !_settings.VoiceClip ? "" : e.VoiceListening ? $"Listening on {e.MicName}" : e.VoiceError ?? "Starting…", e.VoiceLastHeard, e.VoiceLive);
     }
 
     // ---- menu actions -----------------------------------------------------

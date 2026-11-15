@@ -52,17 +52,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _applyTimer.Tick += async (_, _) => { _applyTimer.Stop(); await ApplySettingsAsync(); };
         _refreshTimer.Tick += (_, _) => { _refreshTimer.Stop(); LoadClips(); };
 
-        Loaded += (_, _) =>
+        // Everything that reads from the system (audio devices, monitors, the clips folder) waits until the window has drawn its first
+        // frame. Doing it before then keeps the empty window on screen, unpainted, while it works.
+        void StartUp()
         {
-            PopulateSettings();
-            CleanOrphanStems();
-            LoadClips();
-            WatchFolder();
-            UpdateCardWidth();
-            _statusTimer.Start();
-            _ = PollStatusAsync();
-            if (openClip is not null && File.Exists(openClip)) OpenPlayer(new ClipItem(openClip), select);
-        };
+            ContentRendered -= StartUpHandler;
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+            {
+                PopulateSettings();
+                CleanOrphanStems();
+                LoadClips();
+                WatchFolder();
+                UpdateCardWidth();
+                _statusTimer.Start();
+                _ = PollStatusAsync();
+                if (openClip is not null && File.Exists(openClip)) OpenPlayer(new ClipItem(openClip), select);
+            }));
+        }
+        void StartUpHandler(object? s, EventArgs e) => StartUp();
+        ContentRendered += StartUpHandler;
         // Don't poll while minimized.
         StateChanged += (_, _) => { if (WindowState == WindowState.Minimized) _statusTimer.Stop(); else _statusTimer.Start(); };
     }
@@ -77,6 +85,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (Player.Visibility == Visibility.Visible) { Player.Release(); Player.Visibility = Visibility.Collapsed; }
         ClipsPage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+        _statusTimer.Interval = settings ? TimeSpan.FromMilliseconds(300) : TimeSpan.FromSeconds(1);   // live captions in Settings need quicker updates
         if (!settings) LoadClips();
     }
 
@@ -288,6 +297,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 GameMeter.Value = ToMeter(s.GameLevel);
                 MicMeter.Value = ToMeter(s.MicLevel);
                 StatusStrip.ToolTip = string.IsNullOrEmpty(s.Audio) ? "No audio is being recorded" : $"Audio: {s.Audio}";
+                ShowVoice(s);
             }
         }
         finally { _polling = false; }
@@ -319,6 +329,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         StartRecorderButton.Visibility = canStart ? Visibility.Visible : Visibility.Collapsed;
         BufferText.Text = ""; BufferBar.Visibility = Visibility.Collapsed; VramText.Text = ""; CpuText.Text = ""; QualityText.Text = "";
         AudioMeters.Visibility = Visibility.Collapsed;
+        ShowVoice(null);
     }
 
     /// <summary>Maps a 0 to 1 peak to a meter on a decibel scale (silence at -60 dB), so quiet sound still shows.</summary>
@@ -363,6 +374,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _games.AddRange((_settings.WindowApps ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase));
         RebuildGameChips();
         KeepVisibleBox.IsChecked = _settings.KeepWindowVisible;
+        PopulateVoice();
         TracksBox.IsChecked = _settings.SeparateTracks;
         GameGainSlider.Value = _settings.GameGainDb;
         MicGainSlider.Value = _settings.MicGainDb;
@@ -526,6 +538,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings.GameVolumeComp = CompBox.IsChecked == true;
         _settings.WindowApps = string.Join(", ", _games);
         _settings.KeepWindowVisible = KeepVisibleBox.IsChecked == true;
+        ReadVoice();
         _settings.SeparateTracks = TracksBox.IsChecked == true;
         _settings.UiSoftwareRendering = SoftwareBox.IsChecked == true;
 

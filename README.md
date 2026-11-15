@@ -6,6 +6,8 @@ A lightweight instant-replay clipper for Windows. It keeps the last few minutes 
 - **Clip manager.** A small window to browse clips, play them, and trim them. It can stay open without costing much.
 - **Audio.** Game audio and microphone are recorded together and can be re-balanced per clip afterwards.
 - **Game windows.** Add a game and Buffered records just its window instead of the whole monitor, even if you minimize it (it is restored behind your other windows).
+- **Clip by voice.** Say a phrase like "clip that" to save a clip. It runs on Windows' built-in speech recognizer, entirely on your PC, and only works with an English (US) Windows speech recognizer installed. Off by default.
+- **Clip manager extras.** Folders, favorites (protected from delete), names and notes, drag-select, copy and drag a clip out to share.
 - **Quiet.** No Windows notifications, so it won't interfere with fullscreen games.
 - **SteamVR aware.** While SteamVR runs, it records the Steam Streaming audio devices instead.
 
