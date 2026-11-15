@@ -1,0 +1,43 @@
+name: release
+
+# Tag a version (for example v0.1.0) to build the zip and attach it to a GitHub release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download ffmpeg
+        shell: pwsh
+        run: |
+          $base = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest'
+          $name = 'ffmpeg-master-latest-win64-gpl.zip'
+          Invoke-WebRequest "$base/$name" -OutFile $name
+          Invoke-WebRequest "$base/checksums.sha256" -OutFile checksums.sha256
+          $expected = ((Get-Content checksums.sha256 | Where-Object { $_ -match [regex]::Escape($name) }) -split '\s+')[0]
+          $actual = (Get-FileHash $name -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw "ffmpeg checksum mismatch: $expected vs $actual" }
+          Expand-Archive $name -DestinationPath ffmpeg
+          $dir = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
+          "FFMPEG_DIR=$dir\bin" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Build the zip
+        shell: pwsh
+        run: ./scripts/publish.ps1 -FfmpegDir $env:FFMPEG_DIR
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/Buffered-win-x64.zip
+          generate_release_notes: true

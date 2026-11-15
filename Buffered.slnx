@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Buffered.Core/Buffered.Core.csproj" />
+    <Project Path="src/Buffered.Recorder/Buffered.Recorder.csproj" />
+    <Project Path="src/Buffered.UI/Buffered.UI.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+</Solution>
