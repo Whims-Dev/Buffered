@@ -69,15 +69,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 LoadClips();
                 WatchFolder();
                 UpdateCardWidth();
-                _statusTimer.Start();
-                _ = PollStatusAsync();
+                if (WindowState != WindowState.Minimized)   // a window that opens minimized never raises the state change below
+                {
+                    _statusTimer.Start();
+                    _ = PollStatusAsync();
+                }
                 if (openClip is not null && File.Exists(openClip)) OpenPlayer(new ClipItem(openClip), select);
             }));
         }
         void StartUpHandler(object? s, EventArgs e) => StartUp();
         ContentRendered += StartUpHandler;
         // Don't poll while minimized.
-        StateChanged += (_, _) => { if (WindowState == WindowState.Minimized) _statusTimer.Stop(); else _statusTimer.Start(); };
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized) _statusTimer.Stop();
+            else { _statusTimer.Start(); _ = PollStatusAsync(); }   // catch up at once when it comes back
+        };
     }
 
     // ---- pages --------------------------------------------------------------
@@ -90,7 +97,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (Player.Visibility == Visibility.Visible) { Player.Release(); Player.Visibility = Visibility.Collapsed; }
         ClipsPage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
-        _statusTimer.Interval = settings ? TimeSpan.FromMilliseconds(300) : TimeSpan.FromSeconds(1);   // live captions in Settings need quicker updates
         if (!settings) LoadClips();
     }
 
