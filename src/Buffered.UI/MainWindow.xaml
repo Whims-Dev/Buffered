@@ -134,6 +134,9 @@
                 <Grid x:Name="SelectionBar" Grid.Row="0" Margin="0,0,0,16" Height="50" Visibility="Collapsed" Panel.ZIndex="2" Background="{DynamicResource ApplicationBackgroundBrush}">
                     <TextBlock x:Name="SelectionText" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button x:Name="SelShare" Height="36" Padding="14,0" Margin="0,0,8,0" Click="SelShare_Click" AutomationProperties.Name="Share selected clip" ToolTip="Make a smaller copy, or copy the original, ready to paste into a chat">
+                            <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE72D;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock Text="Share" VerticalAlignment="Center"/></StackPanel>
+                        </Button>
                         <Button x:Name="SelFavorite" Height="36" Padding="14,0" Margin="0,0,8,0" Click="SelFavorite_Click" AutomationProperties.Name="Favorite">
                             <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE734;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock x:Name="SelFavoriteLabel" Text="Favorite" VerticalAlignment="Center"/></StackPanel>
                         </Button>
@@ -681,6 +684,16 @@
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,70,0"><TextBlock Text="Start-up picture"/><TextBlock Text="Shows a small picture with the logo while Buffered opens, for at least a second. Applies the next time it opens." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <CheckBox x:Name="SplashBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Start-up picture"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,70,0"><TextBlock Text="Fade the window in"/><TextBlock Text="Fades Buffered in when it opens, and the start-up picture in and out, instead of showing them at once. Applies the next time it opens." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <CheckBox x:Name="FadeBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Fade the window in"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Start with Windows"/><TextBlock Text="Starts the recorder in the tray when you sign in, so it is always ready. No window opens." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <CheckBox x:Name="StartupBox" Grid.Column="1" Style="{StaticResource SwitchBox}" VerticalAlignment="Center" Checked="StartupBox_Changed" Unchecked="StartupBox_Changed" AutomationProperties.Name="Start with Windows"/>
@@ -716,6 +729,12 @@
                                         <StackPanel Orientation="Horizontal"><TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE72C;" Margin="0,1,8,0" VerticalAlignment="Center"/><TextBlock Text="Check for updates" TextWrapping="NoWrap" VerticalAlignment="Center"/></StackPanel>
                                     </Button>
                                 </StackPanel>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <StackPanel Margin="0,0,24,0"><TextBlock Text="Discord webhooks"/><TextBlock Text="Places you can send a clip with one click. Drag the handle to reorder; the order is the same in the share window. A webhook link lets anyone post in that channel, so keep it private. It is saved only on this PC." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <local:WebhookEditor x:Name="WebhookList" Grid.Row="1" Margin="0,10,0,0"/>
                             </Grid>
                         </StackPanel>
                     </Border>

@@ -34,8 +34,32 @@ public sealed class AppTrackSetting
     public bool InMix { get; set; } = true;
 }
 
+/// <summary>A Discord channel clips can be sent to through its webhook. The link itself is a secret: whoever has it can post in the channel.</summary>
+public sealed class WebhookTarget
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    /// <summary>The name the user gave it.</summary>
+    public string Label { get; set; } = "";
+    /// <summary>Its colour as #RRGGBB, used for its button and the embed's edge.</summary>
+    public string Color { get; set; } = "#7FA6FF";
+    public string Url { get; set; } = "";
+    /// <summary>Filled in from Discord when the webhook is added; used to build links to the posted message.</summary>
+    public string GuildId { get; set; } = "";
+    public string ChannelId { get; set; } = "";
+}
+
 public sealed class Settings
 {
+    /// <summary>Discord webhooks, in the order the user arranged them (the same order in Settings and in the share window).</summary>
+    public List<WebhookTarget> Webhooks { get; set; } = new();
+    /// <summary>The webhook used last, which the share window starts on.</summary>
+    public string LastWebhook { get; set; } = "";
+
+    /// <summary>Show a small picture while the clip manager opens (for at least a second).</summary>
+    public bool ShowSplash { get; set; } = true;
+    /// <summary>Fade the clip manager (and that picture) in and out instead of showing them at once.</summary>
+    public bool FadeIn { get; set; } = true;
+
     /// <summary>Programs recorded on their own track, keyed by lower-case process name. Currently one is supported.</summary>
     public Dictionary<string, AppTrackSetting> AppTracks { get; set; } = new();
 

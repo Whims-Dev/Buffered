@@ -1,0 +1,27 @@
+<Window x:Class="Buffered.UI.SplashWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Buffered starting" Width="460" Height="260" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" ShowActivated="False"
+        WindowStartupLocation="CenterScreen" ThemeMode="System" AllowsTransparency="True" Background="Transparent" Opacity="0"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+    <!-- A small centred picture shown while the clip manager opens. It follows the Windows light or dark setting and fades in. -->
+    <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Background="{DynamicResource ApplicationBackgroundBrush}">
+        <Grid ClipToBounds="True">
+            <Grid.Clip><RectangleGeometry Rect="0,0,458,258" RadiusX="11" RadiusY="11"/></Grid.Clip>
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,-6,0,0">
+                <Image Source="/Assets/logo.png" Width="84" Height="84" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <TextBlock Text="Buffered" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,0"/>
+            </StackPanel>
+
+            <TextBlock Text="Loading…" Style="{StaticResource Caption}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="18,0,0,16"/>
+            <TextBlock x:Name="VersionText" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,18,16"/>
+
+            <!-- The bar slides along the bottom edge. It is a plain animation, so it keeps moving while the window behind it is being built. -->
+            <Border Height="3" VerticalAlignment="Bottom" ClipToBounds="True" Background="#33808080">
+                <Rectangle x:Name="Slider" Width="156" HorizontalAlignment="Left" Fill="#C9C46A">
+                    <Rectangle.RenderTransform><TranslateTransform x:Name="SlideMove" X="-156"/></Rectangle.RenderTransform>
+                </Rectangle>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

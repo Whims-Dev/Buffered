@@ -22,7 +22,8 @@ internal static class ShareExport
     }
 
     /// <summary>Encodes the chosen part of <paramref name="input"/>. The result lands next to <paramref name="clipPath"/> as "name (10 MB).mp4".</summary>
-    public static async Task<(bool Ok, string Path, long Bytes, string Error)> RunAsync(string input, double start, double end, string clipPath, string displayName, int targetMb, IProgress<double>? progress)
+    public static async Task<(bool Ok, string Path, long Bytes, string Error)> RunAsync(string input, double start, double end, string clipPath, string displayName, int targetMb, IProgress<double>? progress,
+        bool keepBesideOriginal = true)
     {
         double length = Math.Max(0.5, end - start);
         var plan = PlanFor(targetMb, length);
@@ -47,7 +48,8 @@ internal static class ShareExport
                     long size = new FileInfo(temp).Length;
                     if (size <= limit)
                     {
-                        string final = Unique(clipPath, displayName, targetMb);
+                        // Next to the original as "Name (10 MB).mp4", or (for sending) a temporary file the caller removes afterwards.
+                        string final = keepBesideOriginal ? Unique(clipPath, displayName, targetMb) : System.IO.Path.Combine(work, $".share_{Guid.NewGuid():N}.mp4");
                         File.Move(temp, final, overwrite: false);
                         progress?.Report(1);
                         return (true, final, size, "");

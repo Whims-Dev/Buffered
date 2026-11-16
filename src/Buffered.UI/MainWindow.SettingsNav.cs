@@ -59,6 +59,7 @@ public partial class MainWindow
         ("aud", "Audio", "", "Game sound, microphone and apps"),
         ("voi", "Voice", "", "Save a clip by saying a phrase"),
         ("sav", "Saving", "", "Where clips go and how you save them"),
+        ("sha", "Sharing", "", "Places you can send a clip with one click"),
         ("sys", "System", "", "How Buffered runs on this PC"),
     };
 
@@ -82,9 +83,12 @@ public partial class MainWindow
         ("Save hotkey", "sav", "shortcut key keybind"),
         ("Clips folder", "sav", "location move storage drive directory"),
         ("Sound when a clip is saved", "sav", "beep chime audio cue"),
+        ("Discord webhooks", "sha", "discord webhook share send post channel server link embed color order"),
         ("Start with Windows", "sys", "startup boot login autostart"),
         ("Shortcuts", "sys", "start menu desktop icon"),
         ("Draw this window on the CPU", "sys", "gpu software rendering vram"),
+        ("Start-up picture", "sys", "splash loading screen logo opening"),
+        ("Fade the window in", "sys", "animation smooth opening transition"),
         ("Compress audio in memory", "sys", "ram memory mu-law"),
         ("Updates", "sys", "version upgrade release download"),
     };

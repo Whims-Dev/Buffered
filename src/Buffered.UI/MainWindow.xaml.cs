@@ -37,6 +37,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         DataContext = this;
         BuildSettingsLayout();
+        WebhookList.Attach(_settings);
+        Player.AppSettings = _settings;
         Player.MoveShareTo((Grid)Dialogs.Parent, Dialogs);
 
         if (startedRecorder)
@@ -385,6 +387,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         MicGainSlider.Value = _settings.MicGainDb;
         UpdateGainTexts();
         SoftwareBox.IsChecked = _settings.UiSoftwareRendering;
+        SplashBox.IsChecked = _settings.ShowSplash;
+        FadeBox.IsChecked = _settings.FadeIn;
         UpdateRamHint();
         _hardKey = HardKey();
         _loading = false;
@@ -552,6 +556,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings.CompressAudioMemory = CompressBox.IsChecked == true;
         _settings.SeparateTracks = TracksBox.IsChecked == true;
         _settings.UiSoftwareRendering = SoftwareBox.IsChecked == true;
+        _settings.ShowSplash = SplashBox.IsChecked == true;
+        _settings.FadeIn = FadeBox.IsChecked == true;
 
         UpdateRamHint();
         ApplyText.Text = "Applying…";

@@ -160,22 +160,52 @@
         </Grid>
 
         <!-- Share: make a smaller copy that fits a chat app's upload limit -->
-        <Grid x:Name="ShareScrim" Visibility="Collapsed" Background="#8C000000" PreviewKeyDown="Share_PreviewKeyDown">
-            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="12" Padding="28,26,28,24"
+        <Grid x:Name="ShareScrim" Visibility="Collapsed" Background="#8C000000" PreviewKeyDown="Share_PreviewKeyDown" SizeChanged="ShareScrim_SizeChanged">
+            <Border x:Name="ShareCard" Width="500" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="12" Padding="28,26,16,24"
                     Background="{DynamicResource ApplicationBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                 <Border.Effect><DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.45" Color="Black"/></Border.Effect>
-                <StackPanel>
-                    <TextBlock Text="Share this clip" FontSize="16" FontWeight="SemiBold"/>
-                    <TextBlock Text="Makes a smaller copy that fits where you want to send it. Your original isn't changed." Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.75" LineHeight="20"/>
-                    <StackPanel x:Name="ShareOptions" Margin="0,18,0,0"/>
-                    <TextBlock x:Name="ShareEstimate" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="12" Opacity="0.8" MinHeight="34" LineHeight="18"/>
-                    <ProgressBar x:Name="ShareBar" Height="4" Margin="0,6,0,0" Minimum="0" Maximum="1" Visibility="Collapsed"/>
-                    <TextBlock x:Name="ShareResult" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="12" Visibility="Collapsed"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                        <Button x:Name="ShareClose" Height="34" MinWidth="84" Padding="14,0" Margin="0,0,8,0" Content="Close" Click="ShareClose_Click"/>
-                        <Button x:Name="ShareGo" Height="34" MinWidth="84" Padding="14,0" Style="{StaticResource PrimaryButton}" Content="Make smaller copy" Click="ShareGo_Click"/>
-                    </StackPanel>
-                </StackPanel>
+                <Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="0,0,12,0">
+                            <TextBlock Text="Share this clip" FontSize="16" FontWeight="SemiBold" Margin="0,0,40,0"/>
+                            <TextBlock x:Name="ShareIntro" Text="Pick a size, then make a copy or send it to a Discord channel." Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.75" LineHeight="20"/>
+                            <UniformGrid x:Name="ShareOptions" Rows="1" Margin="0,16,0,0"/>
+                            <TextBlock x:Name="ShareEstimate" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="12" Opacity="0.8" MinHeight="34" LineHeight="18"/>
+
+                            <TextBlock x:Name="ShareToLabel" Text="Send to" FontSize="12" Opacity="0.7" Margin="0,8,0,0"/>
+                            <WrapPanel x:Name="SharePills" Margin="0,8,0,0"/>
+                            <TextBlock x:Name="ShareNoHooks" Text="Add a Discord webhook from the three dots to send clips straight to a channel." FontSize="12" Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <StackPanel x:Name="ShareManage" Visibility="Collapsed" Margin="0,14,0,0">
+                                <TextBlock Text="Your webhooks" FontSize="12" Opacity="0.7"/>
+                                <local:WebhookEditor x:Name="ShareEditor" Margin="0,6,0,0"/>
+                            </StackPanel>
+
+                            <ProgressBar x:Name="ShareBar" Height="4" Margin="0,14,0,0" Minimum="0" Maximum="1" Visibility="Collapsed"/>
+                            <TextBlock x:Name="ShareResult" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="12" Visibility="Collapsed"/>
+                            <StackPanel x:Name="ShareLinks" Orientation="Horizontal" Margin="0,6,0,0" Visibility="Collapsed">
+                                <Button x:Name="ShareOpenLink" Height="30" Padding="10,0" MinHeight="0" Margin="0,0,6,0" Background="Transparent" BorderBrush="Transparent" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Content="Open in Discord" Click="ShareOpenLink_Click"/>
+                                <Button x:Name="ShareCopyLink" Height="30" Padding="10,0" MinHeight="0" Background="Transparent" BorderBrush="Transparent" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Content="Copy link" Click="ShareCopyLink_Click"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                                <Button x:Name="ShareClose" Height="34" MinWidth="84" Padding="14,0" Margin="0,0,8,0" Content="Close" Click="ShareClose_Click"/>
+                                <Button x:Name="ShareGo" Height="34" MinWidth="84" Padding="14,0" Margin="0,0,8,0" Content="Make smaller copy" Click="ShareGo_Click"/>
+                                <Button x:Name="ShareSend" Height="34" MinWidth="84" MaxWidth="240" Padding="14,0" Click="ShareSend_Click" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Button x:Name="ShareMore" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-14,-4,0" Width="32" Height="32" MinHeight="0" Padding="0"
+                            Background="Transparent" BorderBrush="Transparent" ToolTip="More options"
+                            AutomationProperties.Name="More share options" Click="ShareMore_Click">
+                        <!-- The icon font is set on the glyph only: the menu below inherits the button's font, and in the icon font its text is boxes. -->
+                        <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE712;" FontSize="16"/>
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Manage webhooks…" Click="ShareManage_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

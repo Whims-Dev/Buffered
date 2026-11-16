@@ -35,6 +35,7 @@ public partial class MainWindow
         PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(HasSelection)));
         SelectionBar.Visibility = _sel.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         SelectionText.Text = $"{_sel.Count} selected";
+        SelShare.Visibility = _sel.Count == 1 ? Visibility.Visible : Visibility.Collapsed;   // one clip at a time
         SelFavoriteLabel.Text = _sel.Count > 0 && _sel.All(c => c.IsFavorite) ? "Unfavorite" : "Favorite";
     }
 
@@ -46,6 +47,11 @@ public partial class MainWindow
     }
 
     private void SelClear_Click(object sender, RoutedEventArgs e) => SetSelection(Array.Empty<ClipItem>());
+
+    private void SelShare_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sel.Count == 1 && _sel.First() is { } clip && File.Exists(clip.Path)) _ = Player.ShareClipAsync(clip);
+    }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
