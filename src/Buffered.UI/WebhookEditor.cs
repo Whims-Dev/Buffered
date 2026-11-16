@@ -28,7 +28,7 @@ public sealed class WebhookEditor : UserControl
     private TextBox _url = null!, _name = null!;
     private TextBlock _urlHint = null!, _nameHint = null!, _error = null!;
     private Button _formAdd = null!;
-    private readonly WrapPanel _formSwatches = new();
+    private readonly Button _formColorButton = new();
     private string _formColor = Palette[0];
     private string? _editing;
 
@@ -214,28 +214,8 @@ public sealed class WebhookEditor : UserControl
         };
     }
 
-    private void ShowPalette(Button target, WebhookTarget h)
-    {
-        var wrap = new WrapPanel { Width = 8 * 30 };
-        var popup = new Popup { PlacementTarget = target, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true, PopupAnimation = PopupAnimation.Fade };
-        foreach (var color in Palette)
-        {
-            var c = color;
-            var swatch = new Button
-            {
-                Width = 28, Height = 28, MinHeight = 0, Padding = new Thickness(0), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
-                Content = new Ellipse { Width = 18, Height = 18, Fill = Hex(c), Stroke = c.Equals(h.Color, StringComparison.OrdinalIgnoreCase) ? Brushes.White : Brushes.Transparent, StrokeThickness = 2 },
-            };
-            System.Windows.Automation.AutomationProperties.SetName(swatch, c);
-            swatch.Click += (_, _) => { h.Color = c; popup.IsOpen = false; Save(); };
-            wrap.Children.Add(swatch);
-        }
-        var card = new Border { Margin = new Thickness(6), Padding = new Thickness(6), CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Child = wrap };
-        card.SetResourceReference(Border.BackgroundProperty, "ApplicationBackgroundBrush");
-        card.SetResourceReference(Border.BorderBrushProperty, "ControlStrokeColorDefaultBrush");
-        popup.Child = card;
-        popup.IsOpen = true;
-    }
+    private void ShowPalette(Button target, WebhookTarget h) =>
+        ColorPalette.Show(target, $"Color for {h.Label}", h.Color, allowNone: false, picked => { if (picked is not null) { h.Color = picked; Save(); } });
 
     // ---- adding one -------------------------------------------------------------
 
@@ -263,7 +243,10 @@ public sealed class WebhookEditor : UserControl
 
         var swatchRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
         swatchRow.Children.Add(new TextBlock { Text = "Color", FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-        swatchRow.Children.Add(_formSwatches);
+        swatchRow.Children.Add(_formColorButton);
+        _formColorButton.Height = 30; _formColorButton.Padding = new Thickness(10, 0, 12, 0);
+        System.Windows.Automation.AutomationProperties.SetName(_formColorButton, "Choose a color");
+        _formColorButton.Click += (_, _) => ColorPalette.Show(_formColorButton, "Webhook color", _formColor, allowNone: false, picked => { if (picked is not null) { _formColor = picked; PaintFormSwatches(); } });
         PaintFormSwatches();
 
         var card = new Border
@@ -284,21 +267,18 @@ public sealed class WebhookEditor : UserControl
         return card;
     }
 
+    /// <summary>Shows the chosen color on the form's color button (a dot and its code).</summary>
     private void PaintFormSwatches()
     {
-        _formSwatches.Children.Clear();
-        foreach (var color in Palette)
+        _formColorButton.Content = new StackPanel
         {
-            var c = color;
-            var b = new Button
+            Orientation = Orientation.Horizontal,
+            Children =
             {
-                Width = 28, Height = 28, MinHeight = 0, Padding = new Thickness(0), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
-                Content = new Ellipse { Width = 18, Height = 18, Fill = Hex(c), Stroke = c == _formColor ? Brushes.White : Brushes.Transparent, StrokeThickness = 2 },
-            };
-            System.Windows.Automation.AutomationProperties.SetName(b, $"Color {c}");
-            b.Click += (_, _) => { _formColor = c; PaintFormSwatches(); };
-            _formSwatches.Children.Add(b);
-        }
+                new Ellipse { Width = 16, Height = 16, Fill = Hex(_formColor), Stroke = new SolidColorBrush(Color.FromArgb(0x40, 255, 255, 255)), StrokeThickness = 1, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Text = _formColor.ToUpperInvariant(), FontFamily = new FontFamily("Consolas"), VerticalAlignment = VerticalAlignment.Center },
+            },
+        };
     }
 
     private async Task AddAsync()

@@ -197,8 +197,6 @@ internal sealed class AudioTrack : IDisposable
     private volatile bool _running;
 
     public string Name { get; }
-    /// <summary>Receives a copy of every chunk of captured audio (48 kHz, 16-bit). Must return quickly.</summary>
-    public Action<byte[]>? Tap { get; set; }
     public int Channels => _channels;
     public long HeldBytes { get { lock (_lock) return _heldFrames * _storedBytes; } }
     public string DeviceId { get; private set; }
@@ -331,7 +329,6 @@ internal sealed class AudioTrack : IDisposable
         Buffer.BlockCopy(e.Buffer, 0, data, 0, data.Length);
         ApplyVolumeCompensation(data);
         UpdateLevel(data);
-        Tap?.Invoke(data);   // the voice trigger listens here; the array is never modified afterwards
 
         lock (_lock)
         {

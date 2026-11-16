@@ -8,7 +8,7 @@ public sealed record RecorderStatus(
     bool Recording, double BufferedSeconds, int BufferSeconds, double BufferedMb,
     long VramMb, double CpuPercent, int Width, int Height, int Fps, string Monitor, string? Error, bool Paused = false,
     string Audio = "", double GameLevel = 0, double MicLevel = 0, string Source = "Monitor",
-    string Voice = "", string VoiceHeard = "", string VoiceLive = "", bool Starting = false);
+    bool Starting = false);
 
 public static class Ipc
 {

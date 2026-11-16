@@ -128,6 +128,70 @@ public static class ClipLibrary
 
     // ---- folders ------------------------------------------------------------
 
+    // ---- folder colors ------------------------------------------------------
+
+    private const string ColorsFileName = ".buffered-folders.json";
+    private static Dictionary<string, string> _folderColors = new(StringComparer.OrdinalIgnoreCase);
+    private static string _colorsRoot = "";
+
+    private static void LoadColors()
+    {
+        if (string.Equals(_colorsRoot, _root, StringComparison.OrdinalIgnoreCase)) return;
+        _colorsRoot = _root;
+        _folderColors = new(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var f = Path.Combine(_root, ColorsFileName);
+            if (File.Exists(f) && JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(f), Json) is { } data)
+                _folderColors = new(data, StringComparer.OrdinalIgnoreCase);
+        }
+        catch { /* a damaged file just means no colors */ }
+    }
+
+    private static void SaveColors()
+    {
+        try
+        {
+            Directory.CreateDirectory(_root);
+            var f = Path.Combine(_root, ColorsFileName);
+            if (_folderColors.Count == 0) { if (File.Exists(f)) File.Delete(f); return; }
+            var tmp = f + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(_folderColors, Json));
+            File.Move(tmp, f, overwrite: true);
+            File.SetAttributes(f, File.GetAttributes(f) | FileAttributes.Hidden);
+        }
+        catch { }
+    }
+
+    /// <summary>The color chosen for a folder (#RRGGBB), or null if it has none.</summary>
+    public static string? FolderColor(string folder)
+    {
+        lock (Gate) { LoadColors(); return _folderColors.TryGetValue(folder, out var c) ? c : null; }
+    }
+
+    /// <summary>Sets a folder's color, or clears it when <paramref name="color"/> is null.</summary>
+    public static void SetFolderColor(string folder, string? color)
+    {
+        lock (Gate)
+        {
+            LoadColors();
+            if (color is null) _folderColors.Remove(folder); else _folderColors[folder] = color;
+            SaveColors();
+        }
+    }
+
+    /// <summary>Keeps a folder's color when the folder is renamed, and drops it when the folder is deleted (newName null).</summary>
+    public static void FolderColorMoved(string oldName, string? newName)
+    {
+        lock (Gate)
+        {
+            LoadColors();
+            if (!_folderColors.Remove(oldName, out var c)) return;
+            if (newName is not null) _folderColors[newName] = c;
+            SaveColors();
+        }
+    }
+
     /// <summary>The visible folders inside the clips folder.</summary>
     public static List<string> Folders()
     {

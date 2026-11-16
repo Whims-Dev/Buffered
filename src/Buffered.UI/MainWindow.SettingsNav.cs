@@ -17,7 +17,7 @@ public partial class MainWindow
     {
         public string Title = "";
         public Grid Row = null!;                 // the row itself
-        public List<FrameworkElement> Extras = new();   // panels that belong to it (per-game settings, voice options)
+        public List<FrameworkElement> Extras = new();   // panels that belong to it (per-game settings, the app panel)
         public Border Wrap = null!;
         public string Keys = "";
     }
@@ -57,7 +57,6 @@ public partial class MainWindow
     {
         ("rec", "Recording", "", "What gets recorded, and how much of it is kept"),
         ("aud", "Audio", "", "Game sound, microphone and apps"),
-        ("voi", "Voice", "", "Save a clip by saying a phrase"),
         ("sav", "Saving", "", "Where clips go and how you save them"),
         ("sha", "Sharing", "", "Places you can send a clip with one click"),
         ("sys", "System", "", "How Buffered runs on this PC"),
@@ -79,7 +78,6 @@ public partial class MainWindow
         ("App on its own track", "aud", "discord spotify chrome separate"),
         ("Keep Game and Mic as separate tracks", "aud", "stems premiere davinci"),
         ("Switch for SteamVR", "aud", "vr vrchat headset"),
-        ("Clip by voice", "voi", "speech recognition clip that phrases sensitivity status last heard captions"),
         ("Save hotkey", "sav", "shortcut key keybind"),
         ("Clips folder", "sav", "location move storage drive directory"),
         ("Sound when a clip is saved", "sav", "beep chime audio cue"),
@@ -119,7 +117,7 @@ public partial class MainWindow
     {
         var oldCards = SettingsSource.Children.OfType<Border>().ToList();
         // Which section each old card falls back to if a row isn't in the list above.
-        string[] fallback = { "rec", "aud", "voi", "sys" };
+        string[] fallback = { "rec", "aud", "sys" };
 
         foreach (var d in SectionDefs)
         {
@@ -144,11 +142,11 @@ public partial class MainWindow
                 if (k is Grid g)
                 {
                     cur = new SettingsUnit { Row = g, Title = FirstText(g) };
-                    string sec = fallback[Math.Min(c, 3)];
+                    string sec = fallback[Math.Min(c, 2)];
                     foreach (var o in SettingOrder) if (o.Title == cur.Title) { sec = o.Section; cur.Keys = o.Keys; }
                     _sections.First(x => x.Id == sec).Units.Add(cur);
                 }
-                else if (cur is not null && k is FrameworkElement fe) cur.Extras.Add(fe);   // GamePanel, AppPanel, VoiceMore
+                else if (cur is not null && k is FrameworkElement fe) cur.Extras.Add(fe);   // GamePanel, AppPanel
             }
         }
 

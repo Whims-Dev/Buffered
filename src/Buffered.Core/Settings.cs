@@ -55,6 +55,9 @@ public sealed class Settings
     /// <summary>The webhook used last, which the share window starts on.</summary>
     public string LastWebhook { get; set; } = "";
 
+    /// <summary>The last colors picked in the color picker (#RRGGBB), newest first, shared by folders and webhooks.</summary>
+    public List<string> RecentColors { get; set; } = new();
+
     /// <summary>Show a small picture while the clip manager opens (for at least a second).</summary>
     public bool ShowSplash { get; set; } = true;
     /// <summary>Fade the clip manager (and that picture) in and out instead of showing them at once.</summary>
@@ -96,23 +99,8 @@ public sealed class Settings
     /// </summary>
     public string WindowApps { get; set; } = "";
 
-    /// <summary>Save a clip when one of the phrases below is said into the microphone. Off by default: it listens continuously.</summary>
-    public bool VoiceClip { get; set; } = false;
-
     /// <summary>Hold the buffered audio at half the size (8-bit companded). Saves memory, costs a faint noise floor under quiet sounds.</summary>
     public bool CompressAudioMemory { get; set; } = false;
-    /// <summary>The phrases that save a clip, separated by commas.</summary>
-    public string VoicePhrases { get; set; } = "clip that";
-    /// <summary>How sure the recognizer must be (0 to 1) before a phrase counts. Higher means fewer accidental clips, more misses.</summary>
-    public double VoiceConfidence { get; set; } = 0.6;
-    /// <summary>How strongly everyday speech competes with the phrases (0 to 1). Lower lets the phrases win more often.</summary>
-    public double VoiceDictationWeight { get; set; } = 0.2;
-    /// <summary>How closely what was heard must SOUND like a phrase to count (0 to 1; 0 turns it off). Lower accepts looser matches.</summary>
-    public double VoiceFuzzy { get; set; } = 0.8;
-    /// <summary>Lift quiet or distant speech to a normal level before it reaches the recognizer.</summary>
-    public bool VoiceAutoGain { get; set; } = true;
-    /// <summary>How sure the phrase-only recognizer must be (0 to 1) to save a clip; 0 turns that recognizer off.</summary>
-    public double VoiceForcedConfidence { get; set; } = 0.5;
     /// <summary>A minimized window can't be recorded. When true, such a window is restored behind your other windows without taking focus.</summary>
     public bool KeepWindowVisible { get; set; } = true;
     /// <summary>Windows device name of the monitor to record, or null for the main monitor.</summary>

@@ -38,6 +38,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
         BuildSettingsLayout();
         WebhookList.Attach(_settings);
+        ColorPalette.Settings = _settings;
         Player.AppSettings = _settings;
         Player.MoveShareTo((Grid)Dialogs.Parent, Dialogs);
 
@@ -171,6 +172,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                                       (q.Length == 0 || c.Title.Contains(q, StringComparison.OrdinalIgnoreCase) || c.Label.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                                        (c.Note?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false))).ToList();
         _shown = shown;
+        UpdateAccent();
 
         GroupList.ItemsSource = shown.GroupBy(c => c.When.Date).OrderByDescending(g => g.Key)
                                      .Select(g => new ClipGroup(ClipItem.FriendlyDay(g.Key), g.ToList())).ToList();
@@ -301,7 +303,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 GameMeter.Value = ToMeter(s.GameLevel);
                 MicMeter.Value = ToMeter(s.MicLevel);
                 StatusStrip.ToolTip = string.IsNullOrEmpty(s.Audio) ? "No audio is being recorded" : $"Audio: {s.Audio}";
-                ShowVoice(s);
             }
         }
         finally { _polling = false; }
@@ -333,7 +334,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         StartRecorderButton.Visibility = canStart ? Visibility.Visible : Visibility.Collapsed;
         BufferText.Text = ""; BufferBar.Visibility = Visibility.Collapsed; VramText.Text = ""; CpuText.Text = ""; QualityText.Text = "";
         AudioMeters.Visibility = Visibility.Collapsed;
-        ShowVoice(null);
     }
 
     /// <summary>Maps a 0 to 1 peak to a meter on a decibel scale (silence at -60 dB), so quiet sound still shows.</summary>
@@ -379,7 +379,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RebuildGameChips();
         KeepVisibleBox.IsChecked = _settings.KeepWindowVisible;
         CompressBox.IsChecked = _settings.CompressAudioMemory;
-        PopulateVoice();
         RebuildAppChips();
         RefreshGeneral();
         TracksBox.IsChecked = _settings.SeparateTracks;
@@ -552,7 +551,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings.GameVolumeComp = CompBox.IsChecked == true;
         _settings.WindowApps = string.Join(", ", _games);
         _settings.KeepWindowVisible = KeepVisibleBox.IsChecked == true;
-        ReadVoice();
         _settings.CompressAudioMemory = CompressBox.IsChecked == true;
         _settings.SeparateTracks = TracksBox.IsChecked == true;
         _settings.UiSoftwareRendering = SoftwareBox.IsChecked == true;

@@ -14,12 +14,6 @@ static class Program
 
         if (args.Length >= 3 && args[0] == "--mf-offset") return MfOffsetTest.Run(args[1], args[2], args.Length > 3 ? args[3] : null);
 
-        if (args.Length >= 1 && args[0] == "--voice-test")
-        {
-            try { return VoiceTest.Run(args); }
-            catch (Exception ex) { File.WriteAllText(Path.Combine(Path.GetTempPath(), "voice_error.txt"), ex.ToString()); return 1; }
-        }
-
         // "BufferedRecorder.exe --test-sounds" plays the saved and failed sounds once each.
         if (args.Length == 1 && args[0] == "--test-sounds")
         {

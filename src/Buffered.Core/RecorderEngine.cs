@@ -50,54 +50,6 @@ public sealed class RecorderEngine : IDisposable
     /// <summary>Raised when the source changed under us (the game closed or its window was resized), so recording should restart.</summary>
     public event Action<string>? NeedsRestart;
 
-    private VoiceTrigger? _voice;
-    /// <summary>Raised when one of the voice phrases is heard (only when voice clipping is on).</summary>
-    public event Action<string>? VoicePhrase;
-    /// <summary>Why voice clipping isn't running even though it is turned on, or null.</summary>
-    public string? VoiceError { get; private set; }
-    public bool VoiceListening => _voice is not null;
-    /// <summary>The last phrase recognized and what came of it, e.g. "clip that · saved a clip".</summary>
-    public string VoiceLastHeard { get; private set; } = "";
-    /// <summary>Words being heard right now (empty when nothing is being said). Shown as live captions in Settings.</summary>
-    public string VoiceLive => Environment.TickCount64 - _voiceLiveAt < 2500 ? _voiceLive : "";
-    private string _voiceLive = ""; private long _voiceLiveAt;
-    public string MicName { get { lock (_audioLock) return _tracks.FirstOrDefault(t => t.Name == "Mic")?.DeviceName ?? ""; } }
-
-    /// <summary>Starts, stops or updates the voice trigger from the current settings. Safe to call while recording.</summary>
-    public void ConfigureVoice()
-    {
-        lock (_audioLock)
-        {
-            _voice?.Dispose(); _voice = null; VoiceError = null;
-            var mic = _tracks.FirstOrDefault(t => t.Name == "Mic");
-            if (mic is not null) mic.Tap = null;
-            if (!_s.VoiceClip) return;
-            if (mic is null) { VoiceError = "No microphone is being recorded."; return; }
-            var phrases = (_s.VoicePhrases ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (phrases.Length == 0) { VoiceError = "No phrases are set."; return; }
-            try
-            {
-                var v = new VoiceTrigger(phrases, _s.VoiceConfidence, _s.VoiceDictationWeight, _s.VoiceFuzzy, _s.VoiceAutoGain, _s.VoiceForcedConfidence);
-                v.PhraseHeard += (p, _) => VoicePhrase?.Invoke(p);
-                v.Hypothesis += h => { _voiceLive = h; _voiceLiveAt = Environment.TickCount64; };
-                v.Seen += (p, kind) =>
-                {
-                    _voiceLive = "";
-                    VoiceLastHeard = kind switch
-                    {
-                        VoiceTrigger.SeenKind.Saved => $"{p} · saved a clip",
-                        VoiceTrigger.SeenKind.NotSure => $"{p} · not sure enough",
-                        VoiceTrigger.SeenKind.Unclear => "heard something · couldn't make it out",
-                        _ => $"“{p}” · not a phrase",
-                    };
-                };
-                _voice = v;
-                mic.Tap = v.Feed;
-            }
-            catch (Exception ex) { VoiceError = ex.Message; }
-        }
-    }
-
     /// <summary>The settings recording actually uses: the defaults plus the running game's own video settings, if it has any.</summary>
     private Settings _eff = null!;
     private string? _gameName;
@@ -160,7 +112,6 @@ public sealed class RecorderEngine : IDisposable
         _enc.Start();
 
         StartAudio(timeline);
-        ConfigureVoice();
 
         _pipe = new FramePipeline(_gpu, _cap, _enc, OutputWidth, OutputHeight, _fps, timeline);
         _pipe.Start();
@@ -270,7 +221,6 @@ public sealed class RecorderEngine : IDisposable
         if (track is null)
         {
             var t = new AudioTrack(name, device, loopback, channels, _timeline!, _eff.BufferSeconds, loopback && _s.GameVolumeComp, _s.CompressAudioMemory);
-            if (name == "Mic" && _voice is not null) t.Tap = _voice.Feed;
             t.Start(); _tracks.Add(t);
         }
         else if (track.DeviceId != device.ID || track.Stopped)
@@ -309,7 +259,7 @@ public sealed class RecorderEngine : IDisposable
     {
         _following = false;
         _follow?.Join(3000);
-        lock (_audioLock) { foreach (var t in _tracks) { t.Tap = null; t.Dispose(); } _tracks.Clear(); _voice?.Dispose(); _voice = null; }
+        lock (_audioLock) { foreach (var t in _tracks) t.Dispose(); _tracks.Clear(); }
         _pipe?.Dispose();
         _enc?.Dispose();
         _cap?.Dispose();

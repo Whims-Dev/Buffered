@@ -285,13 +285,33 @@ public partial class MainWindow
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(new TextBlock { Text = glyph, FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 15, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 10, 0), Opacity = 0.75 });
+        // A folder with a chosen color shows its icon in that color.
+        string? folderColor = folder is null ? null : ClipLibrary.FolderColor(folder);
+        var icon = new TextBlock { Text = glyph, FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 15, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 10, 0), Opacity = folderColor is null ? 0.75 : 1 };
+        if (folderColor is not null) icon.Foreground = ColorPalette.Brush(folderColor);
+        grid.Children.Add(icon);
         var label = new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(label, 1); grid.Children.Add(label);
         var n = new TextBlock { Text = count.ToString(), Style = (Style)FindResource("Caption"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         Grid.SetColumn(n, 2); grid.Children.Add(n);
 
         var b = new ToggleButton { Style = (Style)FindResource("RailItem"), Content = grid, IsChecked = _view == view, Tag = view, ToolTip = name, AllowDrop = true };
+
+        if (folder is not null)
+        {
+            // Hovering a folder swaps its clip count for a three-dot button that opens the same menu as a right-click.
+            var dots = new Button
+            {
+                Content = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 14, Width = 26, Height = 26, MinHeight = 0, Padding = new Thickness(0),
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), Visibility = Visibility.Collapsed, HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, -4, 0), ToolTip = "Folder options",
+            };
+            System.Windows.Automation.AutomationProperties.SetName(dots, $"Options for {name}");
+            Grid.SetColumn(dots, 2); grid.Children.Add(dots);
+            dots.Click += (_, e) => { e.Handled = true; ShowFolderMenu(b, folder); };
+            b.MouseEnter += (_, _) => { dots.Visibility = Visibility.Visible; n.Visibility = Visibility.Hidden; };
+            b.MouseLeave += (_, _) => { dots.Visibility = Visibility.Collapsed; n.Visibility = Visibility.Visible; };
+        }
         System.Windows.Automation.AutomationProperties.SetName(b, name);
         b.Click += (_, _) => { _view = view; foreach (var t in RailTop.Children.OfType<ToggleButton>().Concat(RailFolders.Children.OfType<ToggleButton>())) t.IsChecked = (string)t.Tag == _view; ApplyFilter(); };
 
@@ -316,10 +336,43 @@ public partial class MainWindow
         var menu = new ContextMenu { PlacementTarget = at };
         var rename = new MenuItem { Header = "Rename folder…" };
         rename.Click += async (_, _) => await RenameFolderAsync(folder);
+        var color = new MenuItem { Header = "Folder color…" };
+        // The colors open once the menu has closed, under the same folder.
+        color.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+            ColorPalette.Show(at, $"Color for {folder}", ClipLibrary.FolderColor(folder), allowNone: true, picked => { ClipLibrary.SetFolderColor(folder, picked); RebuildRail(); UpdateAccent(); })),
+            System.Windows.Threading.DispatcherPriority.Background);
         var delete = new MenuItem { Header = "Delete folder…" };
         delete.Click += async (_, _) => await DeleteFolderAsync(folder);
-        menu.Items.Add(rename); menu.Items.Add(delete);
+        menu.Items.Add(rename); menu.Items.Add(color); menu.Items.Add(delete);
         menu.IsOpen = true;
+    }
+
+    // ---- the accent: the viewed folder's color ------------------------------
+
+    private System.Windows.Media.Color? _systemAccent, _appliedAccent;
+
+    /// <summary>
+    /// Everything on the clips page that is normally the Windows accent color (the selection ring and tick, the chosen filter, the selection
+    /// bar) follows the color of the folder being viewed. Other views, and folders with no color, keep the normal accent.
+    /// </summary>
+    private void UpdateAccent()
+    {
+        _systemAccent ??= ((SolidColorBrush)FindResource("AccentFillColorDefaultBrush")).Color;
+        var color = _systemAccent.Value;
+        if (_view.StartsWith("dir:") && ClipLibrary.FolderColor(_view[4..]) is { } hex) color = ColorPalette.Brush(hex).Color;
+        if (_appliedAccent == color) return;   // nothing to change (this runs on every search keystroke)
+        _appliedAccent = color;
+
+        void Put(FrameworkElement scope, Color c, bool system)
+        {
+            scope.Resources["AccentFillColorDefaultBrush"] = new SolidColorBrush(c);
+            scope.Resources["AccentFillColorSecondaryBrush"] = new SolidColorBrush(c) { Opacity = 0.9 };
+            scope.Resources["AccentFillColorTertiaryBrush"] = new SolidColorBrush(c) { Opacity = 0.8 };
+            // Text and ticks on the color: whichever of dark or white reads better on that color (black gets white, yellow gets dark).
+            scope.Resources["TextOnAccentFillColorPrimaryBrush"] = system ? (Brush)FindResource("TextOnAccentFillColorPrimaryBrush") : ColorPalette.TextOn(c);
+        }
+        Put(ClipsPage, color, system: color == _systemAccent.Value);
+        Put(SaveButton, _systemAccent.Value, system: true);   // the Save clip button stays the app's own accent
     }
 
     private async void NewFolder_Click(object sender, RoutedEventArgs e) => await NewFolderAsync(null);
@@ -350,6 +403,7 @@ public partial class MainWindow
             if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) { var tmp = from + ".renaming"; Directory.Move(from, tmp); Directory.Move(tmp, to); }
             else Directory.Move(from, to);
             ClipLibrary.FolderRenamed(folder, name);
+            ClipLibrary.FolderColorMoved(folder, name);
             if (_view == "dir:" + folder) _view = "dir:" + name;
         }
         catch (Exception ex) { await Dialogs.MessageAsync("Couldn't rename the folder", ex.Message); }
@@ -367,7 +421,7 @@ public partial class MainWindow
         {
             foreach (var c in inside) ClipLibrary.MoveClip(c.Path, "");
             var dir = ClipLibrary.FolderPath(folder);
-            if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+            if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) { Directory.Delete(dir); ClipLibrary.FolderColorMoved(folder, null); }
         }
         catch (Exception ex) { await Dialogs.MessageAsync("Couldn't delete the folder", ex.Message); }
         if (_view == "dir:" + folder) _view = "all";

@@ -198,12 +198,15 @@
                                                                 Height="{Binding DataContext.CardHeight, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 MouseLeftButtonDown="Card_Down" MouseMove="Card_Move" MouseLeftButtonUp="Card_Click" MouseRightButtonUp="Card_RightClick">
                                                             <Grid>
-                                                                <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
+                                                                <!-- Painted as a brush on a rounded border, so the picture's corners are as round as the selection ring around it -->
+                                                                <Border CornerRadius="8">
+                                                                    <Border.Background><ImageBrush ImageSource="{Binding Thumb}" Stretch="UniformToFill"/></Border.Background>
+                                                                </Border>
                                                                 <Border x:Name="SelRing" BorderThickness="3" CornerRadius="8" Visibility="Collapsed" IsHitTestVisible="False"
                                                                         BorderBrush="{DynamicResource AccentFillColorDefaultBrush}" Background="#22FFFFFF"/>
                                                                 <Border x:Name="SelDot" Width="24" Height="24" CornerRadius="12" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Opacity="0"
                                                                         Background="#80000000" BorderBrush="#CCFFFFFF" BorderThickness="1.5" Cursor="Hand" MouseLeftButtonUp="Check_Click">
-                                                                    <TextBlock x:Name="SelTick" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="White" Visibility="Collapsed"
+                                                                    <TextBlock x:Name="SelTick" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" Visibility="Collapsed"
                                                                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
                                                                 </Border>
                                                                 <TextBlock x:Name="PlayGlyph" Text="&#xE768;" FontFamily="{StaticResource IconFont}" FontSize="28" Foreground="White"
@@ -240,6 +243,7 @@
                                                             <Setter TargetName="SelDot" Property="Opacity" Value="1"/>
                                                             <Setter TargetName="SelDot" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
                                                             <Setter TargetName="SelDot" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                                            <Setter TargetName="SelDot" Property="BorderThickness" Value="0"/>
                                                             <Setter TargetName="SelTick" Property="Visibility" Value="Visible"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsFavorite}" Value="True">
@@ -572,85 +576,6 @@
                                 <StackPanel VerticalAlignment="Center"><TextBlock Text="Switch for SteamVR"/><TextBlock Text="Use the Steam Streaming devices while SteamVR is running. Switching restarts recording." Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                 <CheckBox x:Name="VrBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Switch for SteamVR"/>
                             </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource Card}" Margin="0,0,0,16">
-                        <StackPanel>
-                            <TextBlock Text="Voice" Style="{StaticResource Caption}" Margin="18,14,18,2"/>
-                            <Grid Margin="18,12">
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,70,0"><TextBlock Text="Clip by voice"/><TextBlock Text="Say a phrase to save a clip, no key needed. Listens through your microphone, all on this PC; audio is never saved or sent anywhere." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
-                                <CheckBox x:Name="VoiceBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Voice_Toggled" Unchecked="Voice_Toggled" AutomationProperties.Name="Clip by voice"/>
-                            </Grid>
-                            <StackPanel x:Name="VoiceMore">
-                                <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
-                                <Grid Margin="18,12">
-                                    <StackPanel VerticalAlignment="Center" Margin="0,0,400,0"><TextBlock Text="Phrases"/><TextBlock Text="Any of these saves a clip. The phrase stays in the clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
-                                    <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center" MaxWidth="390">
-                                        <WrapPanel x:Name="PhraseChips"/>
-                                        <Button x:Name="AddPhraseButton" Content="+ Add phrase" Height="30" Padding="14,0" Margin="0,2,0,2" Click="AddPhrase_Click" AutomationProperties.Name="Add a phrase">
-                                            <Button.Template>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border x:Name="Pill" CornerRadius="15" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Background="{DynamicResource ControlFillColorDefaultBrush}">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/></Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Button.Template>
-                                        </Button>
-                                        <!-- The add button turns into this: one pill with the text typed straight into it -->
-                                        <Border x:Name="PhraseEditor" Visibility="Collapsed" Height="30" CornerRadius="15" Margin="0,2,0,2" Padding="14,0" BorderThickness="1"
-                                                BorderBrush="{DynamicResource ControlStrokeColorSecondaryBrush}" Background="{DynamicResource ControlFillColorSecondaryBrush}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="+" Opacity="0.6" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                <Grid VerticalAlignment="Center" MinWidth="96">
-                                                    <TextBox x:Name="PhraseBox" Style="{StaticResource BareTextBox}" VerticalAlignment="Center" MaxLength="60"
-                                                             KeyDown="PhraseBox_KeyDown" LostKeyboardFocus="PhraseBox_Lost" AutomationProperties.Name="New phrase"/>
-                                                    <TextBlock Text="Add phrase" Opacity="0.5" IsHitTestVisible="False" VerticalAlignment="Center">
-                                                        <TextBlock.Style>
-                                                            <Style TargetType="TextBlock">
-                                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                                <Style.Triggers><DataTrigger Binding="{Binding Text.Length, ElementName=PhraseBox}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
-                                                            </Style>
-                                                        </TextBlock.Style>
-                                                    </TextBlock>
-                                                </Grid>
-                                            </StackPanel>
-                                        </Border>
-                                    </WrapPanel>
-                                </Grid>
-                                <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
-                                <Grid Margin="18,12">
-                                    <StackPanel VerticalAlignment="Center" Margin="0,0,360,0"><TextBlock Text="Sensitivity"/><TextBlock Text="More sensitive catches you more often, but may clip by accident." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
-                                    <Border Height="36" CornerRadius="8" BorderThickness="1" HorizontalAlignment="Right" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
-                                        <UniformGrid Rows="1">
-                                            <RadioButton x:Name="SensLow" GroupName="sens" Style="{StaticResource SegButton}" Padding="12,0" Content="More sensitive" Checked="Sens_Checked"/>
-                                            <RadioButton x:Name="SensMid" GroupName="sens" Style="{StaticResource SegButton}" Padding="12,0" Content="Balanced" IsChecked="True" Checked="Sens_Checked"/>
-                                            <RadioButton x:Name="SensHigh" GroupName="sens" Style="{StaticResource SegButton}" Padding="12,0" Content="Fewer accidents" Checked="Sens_Checked"/>
-                                        </UniformGrid>
-                                    </Border>
-                                </Grid>
-                                <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
-                                <Grid Margin="18,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Status"/>
-                                        <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                                            <Ellipse x:Name="VoiceDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" Margin="0,1,7,0"/>
-                                            <TextBlock x:Name="VoiceStatusText" Style="{StaticResource Caption}" Text="Off"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="24,0,0,0">
-                                        <TextBlock x:Name="VoiceHeardLabel" Text="Last heard" Style="{StaticResource Caption}" HorizontalAlignment="Right"/>
-                                        <TextBlock x:Name="VoiceHeardText" Text="Nothing yet" FontSize="13" Margin="0,3,0,0" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" MaxHeight="40" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
                         </StackPanel>
                     </Border>
 
