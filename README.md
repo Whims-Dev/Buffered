@@ -19,6 +19,14 @@ You need Windows 10 or 11 (64-bit) and a GPU with a hardware H.264 encoder (NVID
 
 If you build from source instead, you also need [ffmpeg](https://ffmpeg.org/) (`ffmpeg.exe` and `ffprobe.exe`) on your PATH or next to `BufferedUI.exe`. Easiest: `winget install Gyan.FFmpeg`.
 
+### Windows may warn you
+
+Buffered is not code-signed, because certificates cost money and this is a free hobby project. The first time you run it, Windows SmartScreen may say **"Windows protected your PC"**. That is Windows being careful about any program it has not seen many times, not a sign that something is wrong with it. To run it, click **More info**, then **Run anyway**.
+
+You can avoid the warning by right-clicking the downloaded zip, choosing **Properties**, ticking **Unblock** and pressing OK *before* you unzip it. On Windows 11 with **Smart App Control** turned on, unsigned programs can be blocked outright; in that case Buffered will not run unless you turn Smart App Control off, which is your call to make.
+
+You do not have to take anyone's word that it is safe: the full source is in this repository, and you can build it yourself (see [Building](#building)). Releases are meant to be built by the GitHub workflow in `.github/workflows/release.yml`, so the zip comes from the code you can read here.
+
 ## Using it
 
 1. Run `BufferedUI.exe`. It opens the clip manager and starts the recorder in the system tray.
@@ -57,6 +65,12 @@ Windows Graphics Capture leaks a small amount of memory for each capture session
 - Games with anti-cheat may block window capture; monitor capture still works.
 - Changing the recorded monitor or game, or resizing a recorded window, restarts recording and empties the buffer.
 - The recorder and clip manager are two small programs that talk over a named pipe.
+
+## Built with AI
+
+Buffered was written with a lot of help from an AI coding assistant (Claude, made by Anthropic), following the author's design and feedback. The author directs what it does and tests it by using it, but the code has not had an independent review, and it has been tried on one PC (Windows 11, NVIDIA GPU). Expect rough edges and bugs, especially on other hardware.
+
+It is provided as is, with no warranty (see the license). If something looks wrong or unsafe, please [open an issue](../../issues).
 
 ## License
 
