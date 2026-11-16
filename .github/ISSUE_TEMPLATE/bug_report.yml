@@ -1,0 +1,74 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. A few details make a bug much easier to find.
+
+        **Please don't paste your `settings.json` as it is.** It can contain Discord webhook links, and anyone with one of those can post in your channel. Remove the `Webhooks` part first, or just describe the settings you changed.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If you can make it happen again, how?
+      placeholder: |
+        1. Open Buffered
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: Buffered version
+      description: Settings, then System, then Updates shows it (for example 0.1.0).
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you get Buffered?
+      options:
+        - The release zip
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: Graphics card and driver
+      description: Recording uses your GPU's hardware encoder, so this matters. Only NVIDIA has been tested so far.
+      placeholder: NVIDIA GeForce RTX 3070, driver 560.94
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game or program being recorded
+      description: If it only happens with one game, say which. Mention if it is fullscreen, windowed or borderless.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log files
+      description: |
+        If Buffered failed to start or save, these files may say why. Paste what is in them, if they exist:
+        `%LocalAppData%\Buffered\recorder.log` and `%LocalAppData%\Buffered\window.log`
+      render: text
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else?
+      description: Screenshots are welcome.

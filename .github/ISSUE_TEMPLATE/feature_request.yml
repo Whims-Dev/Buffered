@@ -1,0 +1,26 @@
+name: Feature request
+description: An idea for something Buffered could do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Buffered is a small hobby project that aims to stay light on your GPU and your attention. Ideas are welcome, but not every one will fit.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation or the annoyance, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Buffered to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you do today instead?
+      description: Another tool, a workaround, or something you tried.

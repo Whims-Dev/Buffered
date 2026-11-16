@@ -1,0 +1,52 @@
+name: It works (or doesn't) on my hardware
+description: Tell us how Buffered runs on your graphics card, especially AMD or Intel
+title: "Hardware report: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only an NVIDIA GPU has been tested so far. AMD and Intel use the same code, but nobody has confirmed it works, so reports are very welcome, good or bad.
+  - type: dropdown
+    id: result
+    attributes:
+      label: How did it go?
+      options:
+        - It works well
+        - It works, with problems
+        - It doesn't work
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: Graphics card and driver
+      placeholder: AMD Radeon RX 6700 XT, driver 24.10.1
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Buffered version
+      description: Settings, then System, then Updates shows it.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What did you notice?
+      description: Did saving work, did the clip look right, how much video memory (VRAM) did it use, did anything break?
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log files
+      description: |
+        If something failed, paste what is in these files, if they exist (please don't paste `settings.json`, it can contain Discord webhook links):
+        `%LocalAppData%\Buffered\recorder.log` and `%LocalAppData%\Buffered\window.log`
+      render: text
