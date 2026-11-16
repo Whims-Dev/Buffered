@@ -22,7 +22,7 @@ jobs:
         shell: pwsh
         run: |
           $base = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest'
-          $name = 'ffmpeg-master-latest-win64-gpl.zip'
+          $name = 'ffmpeg-master-latest-win64-gpl-shared.zip'   # the shared build: one set of codec files instead of two full copies, about 60 MB smaller
           Invoke-WebRequest "$base/$name" -OutFile $name
           Invoke-WebRequest "$base/checksums.sha256" -OutFile checksums.sha256
           $expected = ((Get-Content checksums.sha256 | Where-Object { $_ -match [regex]::Escape($name) }) -split '\s+')[0]

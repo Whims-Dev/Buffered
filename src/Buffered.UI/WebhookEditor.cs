@@ -48,7 +48,7 @@ public sealed class WebhookEditor : UserControl
             },
         };
         System.Windows.Automation.AutomationProperties.SetName(_addButton, "Add a Discord webhook");
-        _addButton.Click += (_, _) => { _form.Visibility = _form.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; if (_form.Visibility == Visibility.Visible) _url.Focus(); };
+        _addButton.Click += (_, _) => { _form!.Visibility = _form.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; if (_form.Visibility == Visibility.Visible) _url.Focus(); };
 
         _form = BuildForm();
         Content = new StackPanel { Children = { _rows, _addButton, _form } };
