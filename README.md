@@ -4,9 +4,11 @@ A lightweight instant-replay clipper for Windows. It keeps the last few minutes 
 
 - **Low VRAM.** Capture, scaling and H.264 encoding all stay on the GPU. The replay buffer lives in system RAM (about 370 MB for 5 minutes at 720p60).
 - **Clip manager.** A small window to browse clips, play them, and trim them. It can stay open without costing much.
-- **Audio.** Game audio and microphone are recorded together and can be re-balanced per clip afterwards.
-- **Game windows.** Add a game and Buffered records just its window instead of the whole monitor, even if you minimize it (it is restored behind your other windows).
-- **Clip manager extras.** Folders, favorites (protected from delete), names and notes, drag-select, copy and drag a clip out to share.
+- **Audio.** Game audio and microphone are recorded together, with a volume and a mute button for each track in the editor. One app, such as Discord, can be recorded on a track of its own, so you can turn it up, down or off in a clip later.
+- **Game windows.** Add a game and Buffered records just its window instead of the whole monitor, even if you minimize it (it is restored behind your other windows). Each game can have its own quality, buffer length, volumes and clips folder.
+- **Sharing.** Make a smaller copy that fits a chat app (10, 20, 25 or 50 MB), copy the original, or post a clip straight to a Discord channel through a webhook, with a title, details and the video attached. Keep as many named, colored webhooks as you like and put them in your own order. Everything happens when you click; nothing is uploaded on its own.
+- **Folders and favorites.** Folders (each with its own color), favorites that are protected from delete, names and notes, drag-select, copy and drag a clip out.
+- **Easy settings.** Settings are split into sections with a search box, and Buffered can start with Windows and add its own shortcuts.
 - **Quiet.** No Windows notifications, so it won't interfere with fullscreen games.
 - **SteamVR aware.** While SteamVR runs, it records the Steam Streaming audio devices instead.
 
@@ -30,8 +32,8 @@ You do not have to take anyone's word that it is safe: the full source is in thi
 
 1. Run `BufferedUI.exe`. It opens the clip manager and starts the recorder in the system tray.
 2. Press **F8** (change it in Settings) to save the last few minutes. Clips go to `Videos\Buffered`.
-3. Open a clip to play it, trim it, or change the game/microphone balance.
-4. In Settings, use **Add game** to record only a game's window.
+3. Open a clip to play it, trim it, or change the volume of each track. Select a clip and press **Share** to make a smaller copy or send it to Discord.
+4. In Settings, use **Add game** to record only a game's window, and **Sharing** to add a Discord webhook.
 
 Closing the window leaves the recorder running in the tray. Use the tray icon to pause (this frees its VRAM) or quit.
 
