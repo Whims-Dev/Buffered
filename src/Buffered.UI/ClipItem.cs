@@ -301,31 +301,54 @@ internal static class Media
         await Gate.WaitAsync();
         try
         {
-            var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-            foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-i", clip, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "4000", "-f", "s16le", "-" }) psi.ArgumentList.Add(a);
-            using var p = Process.Start(psi)!;
-            try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
-            _ = p.StandardError.ReadToEndAsync();
-            using var ms = new MemoryStream();
-            await p.StandardOutput.BaseStream.CopyToAsync(ms);
-            await p.WaitForExitAsync();
-            var bytes = ms.GetBuffer(); int samples = (int)ms.Length / 2;
-            if (p.ExitCode != 0 || samples < buckets) return null;
-
-            var peaks = new float[buckets];
-            for (int i = 0; i < samples; i++)
-            {
-                int b = (int)((long)i * buckets / samples);
-                float v = Math.Abs((short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8))) / 32768f;
-                if (v > peaks[b]) peaks[b] = v;
-            }
-            float max = peaks.Max();
-            if (max < 0.001f) return null;   // silence: nothing to draw
-            for (int i = 0; i < buckets; i++) peaks[i] = (float)Math.Pow(peaks[i] / max, 0.6);   // quiet parts stay visible
+            // The first audio track is the clip's mix; if asking for it by position fails, let ffmpeg choose.
+            var (peaks, why) = await ReadPeaksAsync(clip, buckets, new[] { "-map", "0:a:0" });
+            if (peaks is null) (peaks, why) = await ReadPeaksAsync(clip, buckets, Array.Empty<string>());
+            if (peaks is null) LogWindow($"waveform not drawn for {System.IO.Path.GetFileName(clip)}: {why}");
             return peaks;
         }
-        catch { return null; }
+        catch (Exception ex) { LogWindow("waveform failed: " + ex.Message); return null; }
         finally { Gate.Release(); }
+    }
+
+    private static async Task<(float[]? Peaks, string Why)> ReadPeaksAsync(string clip, int buckets, string[] map)
+    {
+        var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-i", clip }.Concat(map).Concat(new[] { "-vn", "-ac", "1", "-ar", "4000", "-f", "s16le", "-" })) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi)!;
+        try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+        var err = p.StandardError.ReadToEndAsync();
+        using var ms = new MemoryStream();
+        await p.StandardOutput.BaseStream.CopyToAsync(ms);
+        await p.WaitForExitAsync();
+        int samples = (int)ms.Length / 2;
+        if (p.ExitCode != 0) return (null, $"ffmpeg exited with {p.ExitCode}: {(await err).Trim()}");
+        if (samples < 40) return (null, $"only {samples} samples of sound");
+        buckets = Math.Min(buckets, Math.Max(20, samples / 8));   // a very short clip gets fewer, wider bars instead of none
+        var bytes = ms.GetBuffer();
+        var result = new float[buckets];
+        for (int i = 0; i < samples; i++)
+        {
+            int b = (int)((long)i * buckets / samples);
+            float v = Math.Abs((short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8))) / 32768f;
+            if (v > result[b]) result[b] = v;
+        }
+        float max = result.Max();
+        if (max < 0.001f) return (null, "the sound is silent");
+        for (int i = 0; i < buckets; i++) result[i] = (float)Math.Pow(result[i] / max, 0.6);   // quiet parts stay visible
+        return (result, "");
+    }
+
+    /// <summary>One line in the window's small log, so a missing waveform can be traced afterwards.</summary>
+    private static void LogWindow(string text)
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(System.IO.Path.Combine(dir, "window.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {text}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     /// <summary>A row of <paramref name="tiles"/> small pictures spread evenly over a clip, as one image, for the editor's timeline.</summary>
