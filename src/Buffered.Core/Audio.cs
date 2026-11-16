@@ -232,8 +232,19 @@ internal sealed class AudioTrack : IDisposable
         // The sound is captured after the Windows volume, as with the speakers, so the same "ignore Windows volume" boost applies.
         if (compensateVolume)
         {
-            try { using var en = new MMDeviceEnumerator(); _volumeDevice = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia); _volume = SafeVolume(_volumeDevice); }
-            catch { _volume = null; }
+            if (mode == ProcessLoopbackMode.IncludeTargetProcessTree)
+            {
+                // A program on its own track (Discord, say) can play on a different device from Windows' default one (a headset, while the
+                // default is the speakers). Its boost must use the volume of the device it really plays on, found by looking for its sound sessions.
+                _ownApp = name;
+                _volumeDevice = FindEndpointFor(name);
+                _volume = _volumeDevice is null ? null : SafeVolume(_volumeDevice);
+            }
+            else
+            {
+                try { using var en = new MMDeviceEnumerator(); _volumeDevice = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia); _volume = SafeVolume(_volumeDevice); }
+                catch { _volume = null; }
+            }
         }
         _frameBytes = 4;
         _storedBytes = compress ? 2 : _frameBytes;
@@ -246,6 +257,38 @@ internal sealed class AudioTrack : IDisposable
     }
 
     private MMDevice? _volumeDevice;
+    private string? _ownApp;      // set for a program's own track: its volume is that of the device it plays on, looked up again now and then
+    private long _volumeLookupAt;
+
+    /// <summary>The output device on which a program (by process name) is playing sound right now, or null if it isn't.</summary>
+    private static MMDevice? FindEndpointFor(string appName)
+    {
+        try
+        {
+            using var en = new MMDeviceEnumerator();
+            MMDevice? found = null;
+            foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+            {
+                bool match = false;
+                try
+                {
+                    var sessions = d.AudioSessionManager.Sessions;
+                    for (int i = 0; i < sessions.Count && !match; i++)
+                    {
+                        var session = sessions[i];
+                        if (session.State != NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateActive) continue;
+                        uint pid = session.GetProcessID;
+                        if (pid == 0) continue;
+                        try { match = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName.Equals(appName, StringComparison.OrdinalIgnoreCase); } catch { }
+                    }
+                }
+                catch { }
+                if (match && found is null) found = d; else d.Dispose();
+            }
+            return found;
+        }
+        catch { return null; }
+    }
 
     private void OnStopped(object? sender, StoppedEventArgs e) => Stopped = true;
 
@@ -286,8 +329,14 @@ internal sealed class AudioTrack : IDisposable
     /// </summary>
     private void ApplyVolumeCompensation(byte[] data)
     {
-        if (_volume is null) return;
         long now = Environment.TickCount64;
+        if (_ownApp is not null && now - _volumeLookupAt > 4000)
+        {
+            _volumeLookupAt = now;
+            var dev = FindEndpointFor(_ownApp);
+            if (dev is not null) { _volumeDevice = dev; _volume = SafeVolume(dev); _gainAt = 0; }   // if it isn't playing right now, keep the last device it was on
+        }
+        if (_volume is null) return;
         if (now - _gainAt > 250)
         {
             _gainAt = now;
@@ -298,7 +347,17 @@ internal sealed class AudioTrack : IDisposable
 
         var samples = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, short>(data.AsSpan()); // writable view
         for (int i = 0; i < samples.Length; i++)
-            samples[i] = (short)Math.Clamp((int)(samples[i] * _gain), short.MinValue, short.MaxValue);
+            samples[i] = SoftLimit(samples[i] * _gain);
+    }
+
+    /// <summary>Boosted sound that goes past the loudest the format can hold is rounded off gently, instead of being cut flat (which sounds harsh and distorted).</summary>
+    private static short SoftLimit(float v)
+    {
+        const float knee = 24000f, max = 32767f;
+        float a = MathF.Abs(v);
+        if (a <= knee) return (short)v;
+        float y = knee + (max - knee) * MathF.Tanh((a - knee) / (max - knee));
+        return (short)(v < 0 ? -MathF.Min(y, max) : MathF.Min(y, max));
     }
 
     private void UpdateLevel(byte[] data)
