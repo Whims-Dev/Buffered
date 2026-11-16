@@ -1,0 +1,115 @@
+name: ffmpeg
+
+# Builds a slimmed-down ffmpeg with only what Buffered uses (a fraction of the size of the general-purpose build), checks it with
+# scripts/ffmpeg-smoke.ps1, and, when asked to, publishes it as a release asset that the release workflow downloads.
+# Run it by hand from the Actions tab. Leave "publish" off to just build and test.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag for the published build, for example ffmpeg-slim-1'
+        default: 'ffmpeg-slim-1'
+      publish:
+        description: 'Publish it as a release (otherwise only build and test)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  FFMPEG_TAG: n7.1.1                 # FFmpeg release to build (https://github.com/FFmpeg/FFmpeg)
+  NVCODEC_TAG: n12.1.14.0            # NVIDIA encoder headers; an older API level, so the GPU encoder also works with older drivers
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel git diffutils make
+            mingw-w64-x86_64-toolchain mingw-w64-x86_64-nasm mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-x264
+
+      - name: Get the sources
+        run: |
+          git clone --depth 1 --branch "$NVCODEC_TAG" https://github.com/FFmpeg/nv-codec-headers.git
+          git clone --depth 1 --branch "$FFMPEG_TAG" https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+          make -C nv-codec-headers install PREFIX=/mingw64
+
+      - name: Build
+        working-directory: ffmpeg-src
+        run: |
+          ./configure \
+            --prefix=/tmp/ffout --enable-shared --disable-static \
+            --enable-gpl --disable-autodetect --disable-doc --disable-debug --disable-ffplay \
+            --disable-everything \
+            --enable-libx264 --enable-ffnvcodec --enable-nvenc \
+            --enable-decoder=h264,aac,pcm_s16le \
+            --enable-encoder=libx264,h264_nvenc,aac,mjpeg,pcm_s16le \
+            --enable-parser=h264,aac \
+            --enable-demuxer=mov,matroska,h264,s16le \
+            --enable-muxer=mp4,matroska,mjpeg,image2,s16le,h264,null \
+            --enable-protocol=file,pipe \
+            --enable-bsf=h264_mp4toannexb,aac_adtstoasc,extract_extradata,null \
+            --enable-indev=lavfi \
+            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine \
+            --pkg-config-flags=--static
+          make -j"$(nproc)"
+          make install
+
+      - name: Gather the files
+        run: |
+          mkdir -p pkg/ffmpeg-slim-win64/bin
+          cp /tmp/ffout/bin/*.exe /tmp/ffout/bin/*.dll pkg/ffmpeg-slim-win64/bin/
+          # any other DLL the programs need that isn't part of Windows (for example the x264 library or the thread library)
+          for f in pkg/ffmpeg-slim-win64/bin/*.exe pkg/ffmpeg-slim-win64/bin/*.dll; do
+            ldd "$f" | awk '/\/mingw64\/bin\// { print $3 }'
+          done | sort -u | while read -r dll; do cp -n "$dll" pkg/ffmpeg-slim-win64/bin/; done
+          cp ffmpeg-src/COPYING.GPLv2 pkg/ffmpeg-slim-win64/LICENSE.txt
+          {
+            echo "FFmpeg $FFMPEG_TAG, built by the Buffered 'ffmpeg' workflow (.github/workflows/ffmpeg.yml in the Buffered repository)."
+            echo "Source: https://github.com/FFmpeg/FFmpeg/tree/$FFMPEG_TAG"
+            echo "NVIDIA encoder headers $NVCODEC_TAG: https://github.com/FFmpeg/nv-codec-headers"
+            echo "x264 (GPL), from MSYS2: $(pacman -Q mingw-w64-x86_64-x264)  https://code.videolan.org/videolan/x264"
+            echo
+            echo "Configure line and component list: see the workflow file."
+          } > pkg/ffmpeg-slim-win64/BUILD-INFO.txt
+          ls -l pkg/ffmpeg-slim-win64/bin
+          du -sh pkg/ffmpeg-slim-win64
+
+      - name: Check it (every kind of command Buffered runs)
+        shell: pwsh
+        run: ./scripts/ffmpeg-smoke.ps1 -Dir "$PWD\pkg\ffmpeg-slim-win64\bin"
+
+      - name: Zip it
+        shell: pwsh
+        run: |
+          Compress-Archive -Path pkg\ffmpeg-slim-win64 -DestinationPath ffmpeg-slim-win64.zip -CompressionLevel Optimal
+          $size = [math]::Round((Get-Item ffmpeg-slim-win64.zip).Length / 1MB, 1)
+          $raw = [math]::Round((Get-ChildItem pkg -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
+          "Zip: $size MB; unpacked: $raw MB" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-slim-win64
+          path: ffmpeg-slim-win64.zip
+
+      - name: Publish
+        if: ${{ inputs.publish }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: 'Slim ffmpeg for Buffered (${{ inputs.tag }})'
+          body: 'A build of FFmpeg with only what Buffered uses. It is not a Buffered release: the release workflow downloads it. See BUILD-INFO.txt inside for the source.'
+          files: ffmpeg-slim-win64.zip
+          prerelease: true
+          make_latest: false
