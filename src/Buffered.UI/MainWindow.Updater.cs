@@ -118,6 +118,33 @@ public partial class MainWindow
             Process.Start(new ProcessStartInfo(_updPage) { UseShellExecute = true });
     }
 
+    // ---- how the last update ended -----------------------------------------------
+
+    /// <summary>
+    /// After an update the installer script leaves a note saying whether it worked. Shown once, the next time the window opens:
+    /// a short notice if it worked, and the reason (with where the log is) if it didn't.
+    /// </summary>
+    private async void ShowUpdateResult()
+    {
+        try
+        {
+            string file = Path.Combine(UpdateDir, "result.txt");
+            if (!File.Exists(file)) return;
+            string text = (await File.ReadAllTextAsync(file)).Trim();
+            File.Delete(file);
+            int bar = text.IndexOf('|');
+            string kind = bar >= 0 ? text[..bar] : text, detail = bar >= 0 ? text[(bar + 1)..] : "";
+            if (detail.Length > 300) detail = detail[..300] + "…";
+            if (kind == "ok") Dialogs.Toast($"Updated to version {(detail.Length > 0 ? detail : AppInfo.Version)}", "Buffered was updated and reopened.");
+            else
+                await Dialogs.MessageAsync("The last update didn't finish",
+                    "Buffered tried to update itself, but it couldn't: " + (detail.Length > 0 ? detail : "unknown reason") +
+                    "\n\nYour recordings and clips aren't affected. You can try again from Settings, then Updates, or download the new version from GitHub and unzip it over this folder." +
+                    "\n\nDetails are in " + Path.Combine(UpdateDir, "update.log"));
+        }
+        catch { /* a note that can't be read isn't worth bothering anyone about */ }
+    }
+
     // ---- check -----------------------------------------------------------------
 
     private async Task CheckForUpdateAsync()
@@ -290,7 +317,7 @@ public partial class MainWindow
             File.WriteAllText(script, ApplyScript, new UTF8Encoding(true));
             var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
             foreach (var a in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script,
-                                      "-InstallDir", dir, "-Zip", _updZip, "-UiPid", Environment.ProcessId.ToString(), "-RestartRecorder", recorderRunning ? "1" : "0" })
+                                      "-InstallDir", dir, "-Zip", _updZip, "-UiPid", Environment.ProcessId.ToString(), "-RestartRecorder", recorderRunning ? "1" : "0", "-Version", _updTag.TrimStart('v', 'V') })
                 psi.ArgumentList.Add(a);
             Process.Start(psi);
         }
@@ -304,7 +331,7 @@ public partial class MainWindow
     }
 
     /// <summary>Runs after Buffered has closed: waits, stops anything left, unpacks the new files over the old ones, and opens Buffered again.</summary>
-    private const string ApplyScript = @"param([string]$InstallDir, [string]$Zip, [int]$UiPid, [int]$RestartRecorder)
+    private const string ApplyScript = @"param([string]$InstallDir, [string]$Zip, [int]$UiPid, [int]$RestartRecorder, [string]$Version = '')
 $ErrorActionPreference = 'Stop'
 $work = Split-Path $Zip
 $log = Join-Path $work 'update.log'
@@ -329,9 +356,10 @@ try {
     }
     if (-not $copied) { throw 'could not copy the new files' }
     Log 'files replaced'
+    Set-Content -Path (Join-Path $work 'result.txt') -Value ('ok|' + $Version) -Encoding UTF8
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $Zip -Force -ErrorAction SilentlyContinue
-} catch { Log ('failed: ' + $_); $failed = $true }
+} catch { Log ('failed: ' + $_); $failed = $true; Set-Content -Path (Join-Path $work 'result.txt') -Value ('failed|' + $_.Exception.Message) -Encoding UTF8 }
 if ($RestartRecorder -eq 1) { try { Start-Process (Join-Path $InstallDir 'BufferedRecorder.exe') -ArgumentList '--background' } catch { Log ('recorder did not start: ' + $_) } }
 try { Start-Process (Join-Path $InstallDir 'BufferedUI.exe') } catch { Log ('ui did not start: ' + $_) }
 ";

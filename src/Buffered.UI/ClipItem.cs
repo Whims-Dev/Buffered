@@ -330,7 +330,7 @@ internal static class Media
         for (int i = 0; i < samples; i++)
         {
             int b = (int)((long)i * buckets / samples);
-            float v = Math.Abs((short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8))) / 32768f;
+            float v = Math.Abs((int)(short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8))) / 32768f;   // as an int: Math.Abs of a short fails for -32768, which a clip played at full scale contains
             if (v > result[b]) result[b] = v;
         }
         float max = result.Max();

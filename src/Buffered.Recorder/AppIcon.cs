@@ -25,13 +25,26 @@ static class AppIcon
         (109, Color.White),
     };
 
+    // For small sizes (the taskbar, the tray) the darkest layer is left out: at that size it just blends into the tile, which made the
+    // white shape look squeezed against the left edge. Two layers, lighter grey, centred, read much better.
+    private static readonly (float X, Color C)[] SmallLayers =
+    {
+        (85,  Color.FromArgb(0x9a, 0x9a, 0xa4)),
+        (109, Color.White),
+    };
+
     /// <summary>Renders the icon at a size. An optional badge adds a status dot in the bottom-right corner.</summary>
-    public static Bitmap Render(int size, Color? badge = null)
+    public static Bitmap Render(int size, Color? badge = null, bool forFile = false)
     {
         // Small sizes are drawn at 4x and scaled down, which keeps the edges cleaner than drawing them directly.
         int ss = size < 64 ? 4 : 1, px = size * ss;
         using var big = new Bitmap(px, px, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(big)) Draw(g, px, badge, small: size <= 32);
+        // The sizes stored in the .ico are what the taskbar and Explorer show: the original three-step fade, with the mark small in its tile.
+        // The tray icons are drawn at their exact size at run time: a simpler two-step mark, a little larger so it reads at 16 and 24 px.
+        float boost = forFile
+            ? (size <= 24 ? 1.05f : size <= 32 ? 1.0f : size <= 48 ? 0.95f : 1f)
+            : (size <= 32 ? 1.15f : size <= 48 ? 1.05f : 1f);
+        using (var g = Graphics.FromImage(big)) Draw(g, px, badge, small: size <= 48, boost: boost, twoLayers: !forFile && size <= 48);
         if (ss == 1) return new Bitmap(big);
 
         var small = new Bitmap(size, size, PixelFormat.Format32bppArgb);
@@ -43,10 +56,12 @@ static class AppIcon
         return small;
     }
 
-    private static void Draw(Graphics g, int px, Color? badge, bool small)
+    private static void Draw(Graphics g, int px, Color? badge, bool small, float boost, bool twoLayers)
     {
-        // At tray sizes the mark is enlarged inside the tile so it stays readable, and the status dot is smaller.
-        float boost = small ? 1.3f : 1f;
+        // At the small sizes the mark is enlarged inside the tile so it stays readable (less so for 40 to 48 px), and the status dot is smaller.
+        var layers = twoLayers ? SmallLayers : Layers;
+        // Centre the mark on the tile whatever the layers are (their left and right edges, not the first layer's start).
+        float left = layers.Min(l => l.X + Shape.Min(p => p.X)), right = layers.Max(l => l.X + Shape.Max(p => p.X)), middle = (left + right) / 2;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.Clear(Color.Transparent);
@@ -60,9 +75,9 @@ static class AppIcon
         using (var pen = new Pen(Color.FromArgb(20, 255, 255, 255), Math.Max(1f, 2 * k)))
             g.DrawPath(pen, edge);
 
-        foreach (var (x, color) in Layers)
+        foreach (var (x, color) in layers)
         {
-            var pts = Shape.Select(p => new PointF((128 + (x + p.X - 128) * boost) * k, (128 + p.Y * boost) * k)).ToArray();
+            var pts = Shape.Select(p => new PointF((128 + (x + p.X - middle) * boost) * k, (128 + p.Y * boost) * k)).ToArray();
             using var path = new GraphicsPath();
             path.AddPolygon(pts);
             using var brush = new SolidBrush(color);
@@ -108,7 +123,7 @@ static class AppIcon
         int[] sizes = { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
 
-        var pngs = sizes.Select(s => { using var bmp = Render(s); using var ms = new MemoryStream(); bmp.Save(ms, ImageFormat.Png); return ms.ToArray(); }).ToList();
+        var pngs = sizes.Select(s => { using var bmp = Render(s, null, forFile: true); using var ms = new MemoryStream(); bmp.Save(ms, ImageFormat.Png); return ms.ToArray(); }).ToList();
 
         using var fs = new FileStream(path, FileMode.Create);
         using var w = new BinaryWriter(fs);

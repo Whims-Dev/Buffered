@@ -68,6 +68,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
             {
                 PopulateSettings();
+                ShowUpdateResult();
                 CleanOrphanStems();
                 LoadClips();
                 WatchFolder();
