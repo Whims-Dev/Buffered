@@ -63,6 +63,9 @@ public sealed class Settings
     /// <summary>Fade the clip manager (and that picture) in and out instead of showing them at once.</summary>
     public bool FadeIn { get; set; } = true;
 
+    /// <summary>What the editor's timeline shows besides the times: "wave" (the sound), "film" (pictures), "both" or "none".</summary>
+    public string TimelineDetail { get; set; } = "wave";
+
     /// <summary>Programs recorded on their own track, keyed by lower-case process name. Currently one is supported.</summary>
     public Dictionary<string, AppTrackSetting> AppTracks { get; set; } = new();
 

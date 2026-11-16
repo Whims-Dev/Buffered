@@ -28,6 +28,7 @@ public partial class ClipPlayer : UserControl
     public ClipPlayer()
     {
         InitializeComponent();
+        SliderDrag.Attach(VolumeSlider);
         _timer.Tick += (_, _) => Tick();
         Bar.SeekRequested += t => SeekTo(t);
         Bar.RangeChanged += UpdateRange;
@@ -116,6 +117,7 @@ public partial class ClipPlayer : UserControl
             head.Children.Add(name); head.Children.Add(db); head.Children.Add(mute);
 
             var slider = new Slider { Minimum = -20, Maximum = 20, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 2, 0, 0) };
+            SliderDrag.Attach(slider);
             System.Windows.Automation.AutomationProperties.SetName(slider, $"{t.Name} volume in decibels");
             slider.ValueChanged += (_, _) => { if (!_loadingAudio) AudioEdited(); };
             // Checked/Unchecked rather than Click, so assistive tools that toggle the button are handled too.
@@ -152,6 +154,9 @@ public partial class ClipPlayer : UserControl
         TitleText.Text = clip.Title;
         SubText.Text = clip.Subtitle;
         ErrorText.Visibility = Visibility.Collapsed;
+        BigPlay.Visibility = Visibility.Visible;
+        VideoFrame.Width = VideoFrame.Height = double.NaN;
+        ResetDetail();
         _duration = 0; _prevPos = 0;
         Bar.Duration = 0; Bar.Start = 0; Bar.End = 0; Bar.Position = 0;
         TimeText.Text = "0:00.0 / 0:00.0";
@@ -248,7 +253,9 @@ public partial class ClipPlayer : UserControl
                 System.Windows.Automation.AutomationProperties.SetName(_mutes[i], $"{(muted ? "Unmute" : "Mute")} {_tracks[i].Name}");
                 _mutes[i].ToolTip = $"{(muted ? "Unmute" : "Mute")} {_tracks[i].Name}";
             }
-            if (i < _faded.Count) foreach (var el in _faded[i]) el.Opacity = muted ? 0.4 : (el == _dbTexts[i] ? 0.7 : 1);
+            if (i < _faded.Count) foreach (var el in _faded[i]) el.Opacity = muted ? 0.4 : (el == _dbTexts[i] ? 0.85 : 1);
+            // A track that has been changed shows its value in the accent color.
+            _dbTexts[i].Foreground = !muted && Math.Abs(_sliders[i].Value) > 0.05 ? (Brush)FindResource("AccentTextFillColorPrimaryBrush") : (Brush)FindResource("TextFillColorPrimaryBrush");
         }
         if (AudioHint is null) return;
         AudioHint.Text = AudioChanged
@@ -277,8 +284,23 @@ public partial class ClipPlayer : UserControl
 
     // ---- playback ----------------------------------------------------------
 
+    /// <summary>Sizes the picture's frame to the video's own shape, so the video itself (not a box around it) has the rounded corners.</summary>
+    private void FitVideo()
+    {
+        double vw = Video.NaturalVideoWidth, vh = Video.NaturalVideoHeight, w = VideoHost.ActualWidth, h = VideoHost.ActualHeight;
+        if (vw <= 0 || vh <= 0 || w <= 0 || h <= 0) { VideoFrame.Width = VideoFrame.Height = double.NaN; return; }
+        double scale = Math.Min(w / vw, h / vh);
+        VideoFrame.Width = Math.Floor(vw * scale); VideoFrame.Height = Math.Floor(vh * scale);
+    }
+
+    private void VideoHost_SizeChanged(object sender, SizeChangedEventArgs e) => FitVideo();
+
+    private void VideoFrame_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        VideoFrame.Clip = new RectangleGeometry(new Rect(0, 0, VideoFrame.ActualWidth, VideoFrame.ActualHeight), 12, 12);
+
     private async void Video_MediaOpened(object sender, RoutedEventArgs e)
     {
+        FitVideo();
         _duration = Video.NaturalDuration.HasTimeSpan ? Video.NaturalDuration.TimeSpan.TotalSeconds : 0;
 
         // Windows' media engine reports the length in whole seconds (a 23.67 s clip comes back as 23 s) even though it plays all of it,
@@ -305,6 +327,7 @@ public partial class ClipPlayer : UserControl
         }
 
         Bar.Duration = _duration; Bar.Start = 0; Bar.End = _duration;
+        EnsureDetail();
         if (_preselect is { } sel && _duration > 0)
         {
             Bar.Start = Math.Clamp(sel.Start, 0, _duration - 0.1);
@@ -320,6 +343,7 @@ public partial class ClipPlayer : UserControl
         _timer.Stop(); SetPlaying(false);
         ErrorText.Text = "Couldn't play this clip here. Try Open externally.\n" + e.ErrorException.Message;
         ErrorText.Visibility = Visibility.Visible;
+        BigPlay.Visibility = Visibility.Collapsed;
     }
 
     private void Video_MediaEnded(object sender, RoutedEventArgs e)
@@ -347,6 +371,7 @@ public partial class ClipPlayer : UserControl
     {
         _playing = playing;
         PlayButton.Content = playing ? "" : ""; // pause / play
+        BigPlay.Visibility = playing || ErrorText.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void SeekTo(double seconds)
@@ -425,21 +450,21 @@ public partial class ClipPlayer : UserControl
     {
         if (_duration <= 0)
         {
-            StartBox.Text = EndBox.Text = ""; KeepText.Text = ""; SetButtons(); return;
+            StartBox.Text = EndBox.Text = ""; KeepText.Text = ""; KeepBig.Text = KeepOf.Text = ""; KeepNote.Visibility = Visibility.Collapsed; SetButtons(); return;
         }
         if (!StartBox.IsKeyboardFocused) StartBox.Text = Fmt(Bar.Start);
         if (!EndBox.IsKeyboardFocused) EndBox.Text = Fmt(Bar.End);
 
+        KeepBig.Text = Fmt(Bar.End - Bar.Start);
+        KeepOf.Text = $"kept of {Fmt(_duration)}";
+        TrimState.Text = HasChanges ? "Edited" : "Whole clip";
+        KeepCol0.Width = new GridLength(Math.Max(0, Bar.Start), GridUnitType.Star);
+        KeepCol1.Width = new GridLength(Math.Max(0.01, Bar.End - Bar.Start), GridUnitType.Star);
+        KeepCol2.Width = new GridLength(Math.Max(0, _duration - Bar.End), GridUnitType.Star);
+
         KeepText.Inlines.Clear();
-        if (HasTrim)
-        {
-            KeepText.Inlines.Add("Keeping ");
-            KeepText.Inlines.Add(new System.Windows.Documents.Run(Fmt(Bar.End - Bar.Start)) { FontWeight = FontWeights.SemiBold });
-            KeepText.Inlines.Add($" of {Fmt(_duration)}");
-        }
         if (AudioChanged)
         {
-            if (HasTrim) KeepText.Inlines.Add(new System.Windows.Documents.LineBreak());
             var parts = new List<string>();
             for (int i = 0; i < _tracks.Count; i++)
             {
@@ -449,6 +474,7 @@ public partial class ClipPlayer : UserControl
             KeepText.Inlines.Add(string.Join(", ", parts));
         }
         if (!HasChanges) KeepText.Inlines.Add("Drag the handles on the timeline, or type a start and end, to choose the part to keep.");
+        KeepNote.Visibility = KeepText.Inlines.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         SetButtons();
     }
 

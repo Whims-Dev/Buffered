@@ -59,6 +59,7 @@ public partial class MainWindow
         ("aud", "Audio", "", "Game sound, microphone and apps"),
         ("sav", "Saving", "", "Where clips go and how you save them"),
         ("sha", "Sharing", "", "Places you can send a clip with one click"),
+        ("edi", "Editor", "", "How the clip editor looks and works"),
         ("sys", "System", "", "How Buffered runs on this PC"),
     };
 
@@ -82,6 +83,7 @@ public partial class MainWindow
         ("Clips folder", "sav", "location move storage drive directory"),
         ("Sound when a clip is saved", "sav", "beep chime audio cue"),
         ("Discord webhooks", "sha", "discord webhook share send post channel server link embed color order"),
+        ("Timeline detail", "edi", "editor timeline waveform filmstrip frames pictures sound audio trim gear"),
         ("Start with Windows", "sys", "startup boot login autostart"),
         ("Shortcuts", "sys", "start menu desktop icon"),
         ("Draw this window on the CPU", "sys", "gpu software rendering vram"),

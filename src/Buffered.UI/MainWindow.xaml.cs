@@ -51,6 +51,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         Player.Dialogs = Dialogs;
         Player.CloseRequested += () => { Player.Visibility = Visibility.Collapsed; ClipsPage.Visibility = Visibility.Visible; LoadClips(); };
+        Player.OpenEditorSettingsRequested += () => { _settingsSection = "edi"; NavSettings.IsChecked = true; ShowSettings(); };
+        Player.TimelineDetailChanged += () => { _loading = true; SelectTimeline(); _loading = false; };
         Player.FileReplaced += path => { _allClips.RemoveAll(c => c.Path == path); }; // drop the cached thumbnail and size
 
         _statusTimer.Tick += async (_, _) => await PollStatusAsync();
@@ -394,6 +396,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SoftwareBox.IsChecked = _settings.UiSoftwareRendering;
         SplashBox.IsChecked = _settings.ShowSplash;
         FadeBox.IsChecked = _settings.FadeIn;
+        TimelineBox.ItemsSource = TimelineChoices;
+        TimelineBox.DisplayMemberPath = nameof(TimelineChoice.Name);
+        SelectTimeline();
         UpdateRamHint();
         _hardKey = HardKey();
         _loading = false;
@@ -535,6 +540,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Setting_Changed(GameList, e);
     }
 
+    private sealed record TimelineChoice(string Id, string Name);
+    private static readonly TimelineChoice[] TimelineChoices =
+    {
+        new("wave", "Waveform"), new("film", "Filmstrip"), new("both", "Waveform and filmstrip"), new("none", "Plain"),
+    };
+
+    private void SelectTimeline() =>
+        TimelineBox.SelectedItem = TimelineChoices.FirstOrDefault(c => c.Id == _settings.TimelineDetail) ?? TimelineChoices[0];
+
     private void Setting_Changed(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
@@ -562,6 +576,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings.UiSoftwareRendering = SoftwareBox.IsChecked == true;
         _settings.ShowSplash = SplashBox.IsChecked == true;
         _settings.FadeIn = FadeBox.IsChecked == true;
+        if (TimelineBox.SelectedItem is TimelineChoice tc) _settings.TimelineDetail = tc.Id;
 
         UpdateRamHint();
         ApplyText.Text = "Applying…";

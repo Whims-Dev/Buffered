@@ -274,6 +274,72 @@ internal static class Media
         var (code, _) = await RunAsync(Tools.Ffmpeg, args.ToArray());
         return code == 0 && File.Exists(path) ? path : null;
     }
+    /// <summary>
+    /// How loud a clip is along its length, for the editor's timeline: the loudest sample in each of about <paramref name="buckets"/> equal slices,
+    /// scaled 0 to 1. Decodes the first (mix) audio track at a low sample rate, so it is quick.
+    /// </summary>
+    public static async Task<float[]?> GetPeaksAsync(string clip, int buckets = 1200)
+    {
+        await Gate.WaitAsync();
+        try
+        {
+            var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-i", clip, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "4000", "-f", "s16le", "-" }) psi.ArgumentList.Add(a);
+            using var p = Process.Start(psi)!;
+            try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+            _ = p.StandardError.ReadToEndAsync();
+            using var ms = new MemoryStream();
+            await p.StandardOutput.BaseStream.CopyToAsync(ms);
+            await p.WaitForExitAsync();
+            var bytes = ms.GetBuffer(); int samples = (int)ms.Length / 2;
+            if (p.ExitCode != 0 || samples < buckets) return null;
+
+            var peaks = new float[buckets];
+            for (int i = 0; i < samples; i++)
+            {
+                int b = (int)((long)i * buckets / samples);
+                float v = Math.Abs((short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8))) / 32768f;
+                if (v > peaks[b]) peaks[b] = v;
+            }
+            float max = peaks.Max();
+            if (max < 0.001f) return null;   // silence: nothing to draw
+            for (int i = 0; i < buckets; i++) peaks[i] = (float)Math.Pow(peaks[i] / max, 0.6);   // quiet parts stay visible
+            return peaks;
+        }
+        catch { return null; }
+        finally { Gate.Release(); }
+    }
+
+    /// <summary>A row of <paramref name="tiles"/> small pictures spread evenly over a clip, as one image, for the editor's timeline.</summary>
+    public static async Task<System.Windows.Media.Imaging.BitmapSource?> GetFilmstripAsync(string clip, double duration, int tiles = 24)
+    {
+        if (duration <= 0) return null;
+        await Gate.WaitAsync();
+        string? path = null;
+        try
+        {
+            Directory.CreateDirectory(PreviewDir);
+            path = System.IO.Path.Combine(PreviewDir, Guid.NewGuid().ToString("N") + ".jpg");
+            string fps = (tiles / duration).ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture);
+            var (code, _) = await RunAsync(Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-skip_frame", "nokey", "-i", clip, "-an",
+                "-vf", $"fps={fps},tpad=stop=6:stop_mode=clone,scale=-2:68,tile={tiles}x1", "-frames:v", "1", "-q:v", "5", path);
+            if (code != 0 || !File.Exists(path)) return null;
+            var img = new System.Windows.Media.Imaging.BitmapImage();
+            img.BeginInit();
+            img.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            img.UriSource = new Uri(path);
+            img.EndInit();
+            img.Freeze();
+            return img;
+        }
+        catch { return null; }
+        finally
+        {
+            Gate.Release();
+            try { if (path is not null) File.Delete(path); } catch { }
+        }
+    }
+
     public static void CleanPreviews()
     {
         try { if (Directory.Exists(PreviewDir)) foreach (var f in Directory.EnumerateFiles(PreviewDir)) { try { File.Delete(f); } catch { } } }

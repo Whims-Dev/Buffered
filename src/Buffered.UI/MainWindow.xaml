@@ -620,6 +620,12 @@
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Timeline detail"/><TextBlock Text="What the editor's timeline shows besides the times: the clip's sound, little pictures from it, both, or neither. It can also be changed from the gear in the editor." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <ComboBox x:Name="TimelineBox" Grid.Column="1" Width="220" VerticalAlignment="Center" SelectionChanged="Setting_Changed" AutomationProperties.Name="Timeline detail"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Start with Windows"/><TextBlock Text="Starts the recorder in the tray when you sign in, so it is always ready. No window opens." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <CheckBox x:Name="StartupBox" Grid.Column="1" Style="{StaticResource SwitchBox}" VerticalAlignment="Center" Checked="StartupBox_Changed" Unchecked="StartupBox_Changed" AutomationProperties.Name="Start with Windows"/>
                             </Grid>
