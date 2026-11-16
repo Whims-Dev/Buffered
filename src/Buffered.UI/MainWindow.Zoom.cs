@@ -15,6 +15,16 @@ public partial class MainWindow
     private readonly DispatcherTimer _zoomPillTimer = new() { Interval = TimeSpan.FromMilliseconds(1500) };
     private bool _zoomWired;
 
+    /// <summary>When the window (as laid out, so zoom counts) is too narrow, the status bar drops its least useful items one by one instead of overlapping them.</summary>
+    private void StatusBar_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double w = StatusStrip.ActualWidth;
+        MetersHost.Visibility = w >= 820 ? Visibility.Visible : Visibility.Collapsed;
+        CpuText.Visibility = w >= 700 ? Visibility.Visible : Visibility.Collapsed;
+        QualityText.Visibility = w >= 620 ? Visibility.Visible : Visibility.Collapsed;
+        VramText.Visibility = w >= 540 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private int CurrentZoom => Math.Clamp(_settings.UiZoom <= 0 ? 100 : _settings.UiZoom, ZoomSteps[0], ZoomSteps[^1]);
 
     /// <summary>Applies the saved zoom (called while the window is built, before it is shown).</summary>

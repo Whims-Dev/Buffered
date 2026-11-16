@@ -66,6 +66,24 @@ public sealed class ClipItem : INotifyPropertyChanged
     private bool _selected;
     public bool IsSelected { get => _selected; set { if (_selected == value) return; _selected = value; Raise(nameof(IsSelected)); } }
 
+    private bool _mediaRequested;
+
+    /// <summary>Starts loading the thumbnail and length, once. Called when the clip's card is near the part of the list that is on screen.</summary>
+    public void RequestMedia()
+    {
+        if (_mediaRequested) return;
+        _mediaRequested = true;
+        _ = LoadMediaAsync();
+    }
+
+    /// <summary>Lets go of the picture of a clip that is far off screen (it is cheap to load again: it is kept on disk).</summary>
+    public void ReleaseThumb()
+    {
+        if (_thumb is null) return;
+        Thumb = null;
+        _mediaRequested = false;
+    }
+
     public string Duration { get => _duration; private set { _duration = value; Raise(nameof(Duration)); } }
     public ImageSource? Thumb { get => _thumb; private set { _thumb = value; Raise(nameof(Thumb)); } }
 

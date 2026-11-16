@@ -122,56 +122,9 @@ public partial class MainWindow
             StartupBox.IsChecked = StartupEnabled();
             ShowShortcut(DesktopShortcutButton, DesktopGlyph, DesktopLabel, ShortcutPointsHere(DesktopLink), "Desktop", "Desktop added", "");
             ShowShortcut(StartMenuShortcutButton, StartMenuGlyph, StartMenuLabel, ShortcutPointsHere(StartMenuLink), "Start menu", "Start menu added", "");
-            if (string.IsNullOrEmpty(UpdateText.Text)) UpdateText.Text = $"Version {AppInfo.Version}. Buffered only checks GitHub when you ask, and never installs anything by itself.";
+            if (_upd == UpdState.Idle) RenderUpdate();
         }
         finally { _refreshingGeneral = false; }
-    }
-
-    // ---- updates ---------------------------------------------------------------
-
-    private string? _updateUrl;
-
-    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
-    {
-        UpdateButton.IsEnabled = false;
-        UpdateOpenButton.Visibility = Visibility.Collapsed;
-        UpdateText.Text = "Checking GitHub…";
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Buffered-update-check");   // GitHub requires a user agent; this says nothing about you
-            using var resp = await http.GetAsync($"https://api.github.com/repos/{AppInfo.Repo}/releases/latest");
-            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                UpdateText.Text = $"Version {AppInfo.Version}. No release has been published yet.";
-            }
-            else
-            {
-                resp.EnsureSuccessStatusCode();
-                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-                string tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
-                _updateUrl = doc.RootElement.GetProperty("html_url").GetString();
-                if (Version.TryParse(tag.TrimStart('v', 'V'), out var latest) && Version.TryParse(AppInfo.Version, out var mine) && latest > mine)
-                {
-                    UpdateText.Text = $"Version {latest} is available (you have {mine}).";
-                    UpdateOpenButton.Visibility = Visibility.Visible;
-                }
-                else UpdateText.Text = $"Version {AppInfo.Version}. You're up to date.";
-            }
-        }
-        catch (Exception ex)
-        {
-            UpdateText.Text = ex is HttpRequestException or TaskCanceledException
-                ? "Couldn't reach GitHub. Check your internet connection and try again."
-                : "Couldn't check for updates: " + ex.Message;
-        }
-        finally { UpdateButton.IsEnabled = true; }
-    }
-
-    private void UpdateOpen_Click(object sender, RoutedEventArgs e)
-    {
-        if (_updateUrl is { Length: > 0 } url && url.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase))
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 }
 

@@ -4,6 +4,8 @@ A lightweight instant-replay clipper for Windows. It keeps the last few minutes 
 
 - **Low VRAM.** Capture, scaling and H.264 encoding all stay on the GPU. The replay buffer lives in system RAM (about 370 MB for 5 minutes at 720p60).
 - **Clip manager.** A small window to browse clips, play them, and trim them. It can stay open without costing much.
+- **Editor.** A timeline that shows the part you keep in a gold frame, with the clip's sound, little pictures from it, or both, plus the times. Trim with the handles or by typing times, step a frame at a time with `,` and `.`, and jump with the arrow keys (the distances are settings). Moving the playhead stays smooth, because Buffered quietly makes a copy of the clip with frequent keyframes in the background while you work.
+- **Interface zoom.** Hold Ctrl and turn the mouse wheel, or press Ctrl and plus or minus, to make everything bigger or smaller (Ctrl 0 goes back to 100%).
 - **Audio.** Game audio and microphone are recorded together, with a volume and a mute button for each track in the editor. One app, such as Discord, can be recorded on a track of its own, so you can turn it up, down or off in a clip later.
 - **Game windows.** Add a game and Buffered records just its window instead of the whole monitor, even if you minimize it (it is restored behind your other windows). Each game can have its own quality, buffer length, volumes and clips folder.
 - **Sharing.** Make a smaller copy that fits a chat app (10, 20, 25 or 50 MB), copy the original, or post a clip straight to a Discord channel through a webhook, with a title, details and the video attached. Keep as many named, colored webhooks as you like and put them in your own order. Everything happens when you click; nothing is uploaded on its own.

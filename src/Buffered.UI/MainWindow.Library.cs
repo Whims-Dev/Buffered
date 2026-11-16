@@ -15,6 +15,49 @@ public partial class MainWindow
 {
     private readonly HashSet<ClipItem> _sel = new();
     private List<ClipItem> _shown = new();
+
+    // ---- thumbnails load only for cards that are near the screen ----------------
+
+    private readonly Dictionary<ClipItem, FrameworkElement> _cards = new();
+    private System.Windows.Threading.DispatcherTimer? _visibleTimer;
+
+    private void Card_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is ClipItem c) { _cards[c] = fe; QueueVisibleCheck(); }
+    }
+
+    private void Card_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is ClipItem c && _cards.TryGetValue(c, out var known) && ReferenceEquals(known, fe)) _cards.Remove(c);
+    }
+
+    private void Scroller_ScrollChanged(object sender, ScrollChangedEventArgs e) => QueueVisibleCheck();
+    private void Scroller_SizeChanged(object sender, SizeChangedEventArgs e) => QueueVisibleCheck();
+
+    private void QueueVisibleCheck()
+    {
+        if (_visibleTimer is null)
+        {
+            _visibleTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            _visibleTimer.Tick += (_, _) => { _visibleTimer!.Stop(); LoadVisibleMedia(); };
+        }
+        _visibleTimer.Stop(); _visibleTimer.Start();   // after scrolling settles for a moment
+    }
+
+    /// <summary>Asks for the picture of every card within a screenful of the visible part of the list, and lets go of those far away.</summary>
+    private void LoadVisibleMedia()
+    {
+        double view = Scroller.ViewportHeight > 0 ? Scroller.ViewportHeight : Scroller.ActualHeight;
+        foreach (var c in _shown)
+        {
+            if (!_cards.TryGetValue(c, out var fe) || !fe.IsLoaded) continue;
+            double top;
+            try { top = fe.TransformToAncestor(Scroller).Transform(new Point(0, 0)).Y; } catch { continue; }
+            double bottom = top + fe.ActualHeight;
+            if (bottom > -view && top < view * 2) c.RequestMedia();                    // on screen, or about a screenful either side
+            else if (bottom < -view * 4 || top > view * 5) c.ReleaseThumb();          // far away: free its memory
+        }
+    }
     private ClipItem? _anchor;
     private string _view = "all";            // "all", "fav" or "dir:<folder>"
 

@@ -138,7 +138,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 try
                 {
                     if (known.TryGetValue(f, out var existing)) fresh.Add(existing);
-                    else { var c = new ClipItem(f); fresh.Add(c); _ = c.LoadMediaAsync(); }
+                    else { var c = new ClipItem(f); fresh.Add(c); }   // its thumbnail loads when its card comes near the screen
                 }
                 catch (IOException) { /* still being written */ }
             }

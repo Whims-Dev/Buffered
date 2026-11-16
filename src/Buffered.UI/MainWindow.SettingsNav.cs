@@ -61,6 +61,7 @@ public partial class MainWindow
         ("sha", "Sharing", "", "Places you can send a clip with one click"),
         ("edi", "Editor", "", "How the clip editor looks and works"),
         ("sys", "System", "", "How Buffered runs on this PC"),
+        ("upd", "Updates", "", "Check for a newer version and install it"),
     };
 
     // Row title, its section, and extra words that find it. The order here is the order on screen.
@@ -94,7 +95,7 @@ public partial class MainWindow
         ("Start-up picture", "sys", "splash loading screen logo opening"),
         ("Fade the window in", "sys", "animation smooth opening transition"),
         ("Compress audio in memory", "sys", "ram memory mu-law"),
-        ("Updates", "sys", "version upgrade release download"),
+        ("Updates", "upd", "version upgrade release download install check new"),
     };
 
     private static string FirstText(DependencyObject root)
