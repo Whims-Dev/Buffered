@@ -294,7 +294,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else if (!s.Recording)
             {
-                SetOffline(s.Starting ? "Starting… waiting for Windows to be ready" : s.Error is { } err ? $"Couldn't start: {err}" : "Recording is off", false);
+                SetOffline(s.Starting ? "Starting… waiting for Windows to be ready" + (s.Error is { Length: > 0 } why ? $" (last try: {(why.Length > 90 ? why[..90] + "…" : why)})" : "") : s.Error is { } err ? $"Couldn't start: {err}" : "Recording is off", false);
             }
             else
             {

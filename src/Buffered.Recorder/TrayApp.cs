@@ -87,8 +87,9 @@ sealed class TrayApp : ApplicationContext
                 _vrAtStart = AudioDevices.IsSteamVrRunning();
                 _engine = new RecorderEngine(_settings);
                 _engine.Start();
-                _engine.NeedsRestart += reason => { if (!_paused && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
+                _engine.NeedsRestart += reason => { LogLine($"restarting: {reason}"); if (!_paused && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
                 _error = null; _starting = false; _startAttempt = 0;
+                LogLine($"recording started ({_engine.OutputWidth}x{_engine.OutputHeight})");
                 _tray.Icon = _iconOn;
                 _status.Text = "Recording";
             }
@@ -103,7 +104,7 @@ sealed class TrayApp : ApplicationContext
                 if (_startAttempt < RetryDelays.Length && !_quit)
                 {
                     int wait = RetryDelays[_startAttempt++];
-                    _error = null; _starting = true;
+                    _error = ex.Message; _starting = true;   // kept so the window can say what went wrong while it keeps trying
                     _status.Text = "Starting…";
                     _tray.Text = "Buffered · starting…";
                     Task.Delay(TimeSpan.FromSeconds(wait)).ContinueWith(_ => _sync.BeginInvoke(() =>
@@ -125,6 +126,20 @@ sealed class TrayApp : ApplicationContext
     private bool _starting;
 
     /// <summary>Keeps the reason a start failed (with where it came from) in a small file, so a problem like this can be traced afterwards.</summary>
+    /// <summary>One line in the same small log file (recording started, a restart and why), so a recorder that never settles can be understood afterwards.</summary>
+    private static void LogLine(string text)
+    {
+        try
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered");
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, "recorder.log");
+            if (File.Exists(file) && new FileInfo(file).Length > 200_000) File.Delete(file);
+            File.AppendAllText(file, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} pid {Environment.ProcessId}: {text}{Environment.NewLine}");
+        }
+        catch { }
+    }
+
     private void LogStartFailure(Exception ex)
     {
         try

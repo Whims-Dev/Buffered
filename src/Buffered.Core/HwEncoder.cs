@@ -64,18 +64,44 @@ internal sealed class HwEncoder : IDisposable
         Marshal.FreeCoTaskMem(arr);
 
         _activates = activates;
-        var act = activates[0];
-        try { Name = act.GetAllocatedString(Guid.Parse("314ffbae-5b41-4c95-9c19-4e7d586face3")); } catch { }
-        _mft = act.ActivateObject<IMFTransform>();
 
-        // Async MFTs must be unlocked before use.
-        using (var attrs = _mft.Attributes)
+        // Try each hardware encoder the system lists until one accepts this graphics device. On a PC with two graphics chips (a laptop with
+        // Intel and NVIDIA, say) the first encoder listed can belong to the other chip, and then it refuses the device (often with a
+        // misleading "out of memory"). The last failure is kept so that, if none works, the message can say what was tried.
+        Exception? lastFailure = null;
+        var tried = new List<string>();
+        IMFTransform? chosen = null;
+        string chosenName = "?";
+        foreach (var act in activates)
         {
-            if (attrs.GetUInt32(TransformAttributeKeys.TransformAsync) == 1)
-                attrs.Set(TransformAttributeKeys.TransformAsyncUnlock, 1u);
+            string encName = "?";
+            try { encName = act.GetAllocatedString(Guid.Parse("314ffbae-5b41-4c95-9c19-4e7d586face3")); } catch { }
+            tried.Add(encName);
+            IMFTransform? mft = null;
+            try
+            {
+                mft = act.ActivateObject<IMFTransform>();
+                // Async MFTs must be unlocked before use.
+                using (var attrs = mft.Attributes)
+                {
+                    if (attrs.GetUInt32(TransformAttributeKeys.TransformAsync) == 1)
+                        attrs.Set(TransformAttributeKeys.TransformAsyncUnlock, 1u);
+                }
+                mft.ProcessMessage(TMessageType.MessageSetD3DManager, (UIntPtr)(nuint)_devMgr.NativePointer);
+                chosen = mft; chosenName = encName;
+                break;
+            }
+            catch (Exception ex)
+            {
+                lastFailure = ex;
+                try { mft?.Dispose(); } catch { }
+            }
         }
-
-        _mft.ProcessMessage(TMessageType.MessageSetD3DManager, (UIntPtr)(nuint)_devMgr.NativePointer);
+        if (chosen is null)
+            throw new InvalidOperationException(
+                $"None of the video encoders found ({string.Join(", ", tried)}) would work with the graphics chip in use ({_gpu.AdapterName}): {lastFailure?.Message}", lastFailure);
+        _mft = chosen;
+        Name = chosenName;
 
         // Codec settings (rate control, GOP, no B-frames, low latency).
         Codec.Apply(_mft.NativePointer, _bitrate, _fps * 2);
