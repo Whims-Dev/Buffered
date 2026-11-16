@@ -9,7 +9,7 @@ internal static class SliderDrag
 {
     public static void Attach(Slider slider)
     {
-        slider.IsMoveToPointEnabled = true;
+        slider.IsMoveToPointEnabled = false;   // WPF's own version handles the press first, and then never drags
         slider.PreviewMouseLeftButtonDown += (_, e) =>
         {
             if (e.OriginalSource is DependencyObject d && IsThumb(d)) return;   // the knob already drags itself

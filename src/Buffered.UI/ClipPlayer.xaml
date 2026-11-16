@@ -125,7 +125,7 @@
                                 <TextBlock x:Name="TimeText" Grid.Column="1" Margin="14,0,8,0" VerticalAlignment="Center" FontSize="13" MinWidth="104"/>
                                 <local:TrimBar x:Name="Bar" Grid.Column="2" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="3" Margin="12,0,6,0" VerticalAlignment="Center" FontFamily="{StaticResource IconFont}" Text="&#xE767;" Opacity="0.7"/>
-                                <Slider x:Name="VolumeSlider" Grid.Column="4" Width="90" Minimum="0" Maximum="1" Value="1" LargeChange="0.1" SmallChange="0.05" IsMoveToPointEnabled="True" VerticalAlignment="Center" ValueChanged="Volume_Changed"/>
+                                <Slider x:Name="VolumeSlider" Grid.Column="4" Width="90" Minimum="0" Maximum="1" Value="1" LargeChange="0.1" SmallChange="0.05" VerticalAlignment="Center" ValueChanged="Volume_Changed"/>
                             </Grid>
 
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
