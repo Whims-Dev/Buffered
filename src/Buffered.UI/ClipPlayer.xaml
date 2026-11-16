@@ -52,6 +52,8 @@
                             <TextBlock Text="Editor" FontWeight="SemiBold" FontSize="14"/>
                             <TextBlock Text="Timeline detail" Style="{StaticResource Caption}" Margin="0,10,0,6"/>
                             <StackPanel x:Name="GearOptions"/>
+                            <TextBlock Text="Moving the playhead while playing" Style="{StaticResource Caption}" Margin="0,10,0,6"/>
+                            <StackPanel x:Name="GearScrubOptions"/>
                             <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Button x:Name="GearMore" Margin="0,6,0,0" Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,0" Background="Transparent" BorderBrush="Transparent"
                                     Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Click="GearMore_Click" AutomationProperties.Name="All editor settings in Settings">
@@ -85,6 +87,20 @@
                             <MediaElement x:Name="Video" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Fill"
                                           MediaOpened="Video_MediaOpened" MediaFailed="Video_MediaFailed" MediaEnded="Video_MediaEnded"
                                           MouseLeftButtonUp="Video_Click"/>
+                            <!-- A still of the current picture, held over the video while its file is swapped, so the picture never blinks out -->
+                            <Image x:Name="SwapCover" Stretch="Fill" IsHitTestVisible="False" Visibility="Collapsed"/>
+                            <!-- The clip's thumbnail, shown at once while the video loads, then faded out -->
+                            <Image x:Name="Poster" Stretch="Fill" IsHitTestVisible="False" Visibility="Collapsed"/>
+                            <!-- While the clip loads: what is happening, and a sliding bar along the bottom (inside the frame, so its rounded corners cut the bar off) -->
+                            <Border x:Name="LoadPill" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,22" Padding="14,5" CornerRadius="16"
+                                    Background="#99000000" BorderThickness="1" BorderBrush="#2EFFFFFF" IsHitTestVisible="False">
+                                <TextBlock x:Name="LoadText" Foreground="White" FontSize="12" Text="Opening clip…"/>
+                            </Border>
+                            <Grid x:Name="LoadBar" Visibility="Collapsed" Height="4" VerticalAlignment="Bottom" ClipToBounds="True" Background="#1FFFFFFF" IsHitTestVisible="False" SizeChanged="LoadBar_SizeChanged">
+                                <Rectangle x:Name="LoadSlider" HorizontalAlignment="Left" Fill="{DynamicResource AccentFillColorDefaultBrush}">
+                                    <Rectangle.RenderTransform><TranslateTransform x:Name="LoadMove"/></Rectangle.RenderTransform>
+                                </Rectangle>
+                            </Grid>
                             <Border x:Name="VideoEdge" CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" IsHitTestVisible="False"/>
                         </Grid>
                         <!-- Shown while paused; clicks pass through to the video -->
@@ -132,7 +148,8 @@
                                 <Border Style="{StaticResource Kbd}" Margin="0,0,2,0"><TextBlock Text="Space" FontSize="11" Opacity="0.7"/></Border><TextBlock Text="play" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="2,0,12,0"/>
                                 <Border Style="{StaticResource Kbd}"><TextBlock Text="I" FontSize="11" Opacity="0.7"/></Border><TextBlock Text="set start" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="2,0,12,0"/>
                                 <Border Style="{StaticResource Kbd}"><TextBlock Text="O" FontSize="11" Opacity="0.7"/></Border><TextBlock Text="set end" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="2,0,12,0"/>
-                                <Border Style="{StaticResource Kbd}"><TextBlock Text="&#x2190;" FontSize="11" Opacity="0.7"/></Border><Border Style="{StaticResource Kbd}"><TextBlock Text="&#x2192;" FontSize="11" Opacity="0.7"/></Border><TextBlock Text="seek (Shift for 1 s)" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                                <Border Style="{StaticResource Kbd}"><TextBlock Text="&#x2190;" FontSize="11" Opacity="0.7"/></Border><Border Style="{StaticResource Kbd}"><TextBlock Text="&#x2192;" FontSize="11" Opacity="0.7"/></Border><TextBlock x:Name="SeekHint" Text="seek 5 s (Shift: 1 s)" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="2,0,12,0"/>
+                                <Border Style="{StaticResource Kbd}"><TextBlock Text="," FontSize="11" Opacity="0.7"/></Border><Border Style="{StaticResource Kbd}"><TextBlock Text="." FontSize="11" Opacity="0.7"/></Border><TextBlock Text="frame" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="2,0,0,0"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -239,7 +256,7 @@
         </Grid>
 
         <!-- Share: make a smaller copy that fits a chat app's upload limit -->
-        <Grid x:Name="ShareScrim" Visibility="Collapsed" Background="#8C000000" PreviewKeyDown="Share_PreviewKeyDown" SizeChanged="ShareScrim_SizeChanged">
+        <Grid x:Name="ShareScrim" Visibility="Collapsed" Background="#8C000000" PreviewKeyDown="Share_PreviewKeyDown" SizeChanged="ShareScrim_SizeChanged" MouseLeftButtonDown="ShareScrim_MouseDown" MouseLeftButtonUp="ShareScrim_MouseUp">
             <Border x:Name="ShareCard" Width="500" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="12" Padding="28,26,16,24"
                     Background="{DynamicResource ApplicationBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                 <Border.Effect><DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.45" Color="Black"/></Border.Effect>

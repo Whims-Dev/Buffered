@@ -77,7 +77,8 @@
             <TextBlock Text="{Binding Label}" ToolTip="{Binding Label}" TextTrimming="CharacterEllipsis"/>
         </DataTemplate>
     </Window.Resources>
-    <Grid>
+    <Grid x:Name="ZoomRoot">
+        <Grid.LayoutTransform><ScaleTransform x:Name="ZoomScale"/></Grid.LayoutTransform>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
@@ -620,6 +621,39 @@
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Interface zoom"/><TextBlock Text="Makes everything in the window bigger or smaller. You can also hold Ctrl and turn the mouse wheel, or press Ctrl + and Ctrl -. Ctrl 0 goes back to 100%." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ComboBox x:Name="ZoomBox" Width="110" SelectionChanged="ZoomBox_Changed" AutomationProperties.Name="Interface zoom"/>
+                                    <Button Height="34" Padding="14,0" Margin="8,0,0,0" Content="Reset" Click="ZoomReset_Click" AutomationProperties.Name="Reset zoom to 100%"/>
+                                </StackPanel>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Capture border"/><TextBlock x:Name="BorderHint" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <Button x:Name="BorderButton" Grid.Column="1" Height="34" Padding="14,0" Content="Open Windows settings" VerticalAlignment="Center" Click="BorderButton_Click" AutomationProperties.Name="Open Windows screenshot border settings"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Arrow key seek"/><TextBlock Text="How far the left and right arrow keys move the playhead in the editor, on their own and with Shift held. The comma and period keys always move one frame." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Arrow" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="SeekBox" Width="76" IsEditable="True" SelectionChanged="Setting_Changed" GotKeyboardFocus="Seek_GotFocus" LostFocus="Seek_Commit" KeyDown="Seek_KeyDown" ToolTip="Pick a distance, or type your own" AutomationProperties.Name="Arrow key seek distance"/>
+                                    <TextBlock Text="Shift" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="14,0,8,0"/>
+                                    <ComboBox x:Name="SeekShiftBox" Width="76" IsEditable="True" SelectionChanged="Setting_Changed" GotKeyboardFocus="Seek_GotFocus" LostFocus="Seek_Commit" KeyDown="Seek_KeyDown" ToolTip="Pick a distance, or type your own" AutomationProperties.Name="Shift plus arrow key seek distance"/>
+                                    <TextBlock Text="seconds" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Moving the playhead while playing"/><TextBlock Text="What the editor does when you drag the playhead during playback: pause while you drag and carry on, pause and stay paused, or keep playing the whole time. Keeping it playing is the roughest on slower computers." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <ComboBox x:Name="ScrubBox" Grid.Column="1" Width="230" VerticalAlignment="Center" SelectionChanged="Setting_Changed" AutomationProperties.Name="Moving the playhead while playing"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Timeline detail"/><TextBlock Text="What the editor's timeline shows besides the times: the clip's sound, little pictures from it, both, or neither. It can also be changed from the gear in the editor." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <ComboBox x:Name="TimelineBox" Grid.Column="1" Width="220" VerticalAlignment="Center" SelectionChanged="Setting_Changed" AutomationProperties.Name="Timeline detail"/>
                             </Grid>
@@ -721,5 +755,28 @@
 
         <!-- Dialogs and notices sit above everything -->
         <local:DialogHost x:Name="Dialogs" Grid.RowSpan="2" Grid.ColumnSpan="2"/>
+
+        <!-- Shown for a moment when the zoom changes -->
+        <Border x:Name="ZoomPill" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,52" Padding="16,6,6,6" CornerRadius="20"
+                Background="{DynamicResource ApplicationBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Opacity="0" IsHitTestVisible="False">
+            <Border.Effect><DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.5" Color="Black"/></Border.Effect>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="ZoomText" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="44"/>
+                <Button Height="28" MinHeight="0" Padding="14,0" Margin="8,0,0,0" FontSize="12" Content="Reset" Click="ZoomReset_Click" AutomationProperties.Name="Reset zoom" Cursor="Hand">
+                    <Button.Template>
+                        <!-- Fully rounded, to sit inside the pill's own curve -->
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" CornerRadius="14" Background="{DynamicResource ControlFillColorDefaultBrush}" BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/></Trigger>
+                                <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}"/></Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

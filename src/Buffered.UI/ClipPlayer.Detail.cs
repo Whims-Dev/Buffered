@@ -66,12 +66,33 @@ public partial class ClipPlayer
         OpenEditorSettingsRequested?.Invoke();
     }
 
+    private static readonly (string Id, string Name, string Sub)[] ScrubChoices =
+    {
+        ("resume", "Pause, then keep playing", "Pauses while you drag, then carries on"),
+        ("stay", "Pause, and stay paused", "Pauses when you drag and waits for play"),
+        ("live", "Keep playing", "Plays the whole time; roughest on slower PCs"),
+    };
+
+    private string CurrentScrub => _appSettings?.ScrubMode is { Length: > 0 } d && ScrubChoices.Any(c => c.Id == d) ? d : "resume";
+
     private void BuildGear()
     {
-        GearOptions.Children.Clear();
-        foreach (var (id, name, sub) in DetailChoices)
+        BuildOptions(GearOptions, DetailChoices, CurrentDetail, "Timeline detail", SetDetail);
+        BuildOptions(GearScrubOptions, ScrubChoices, CurrentScrub, "Moving the playhead", id =>
         {
-            bool on = id == CurrentDetail;
+            if (_appSettings is null || _appSettings.ScrubMode == id) return;
+            _appSettings.ScrubMode = id;
+            try { _appSettings.Save(); } catch { }
+            TimelineDetailChanged?.Invoke();
+        });
+    }
+
+    private void BuildOptions(StackPanel panel, (string Id, string Name, string Sub)[] choices, string current, string group, Action<string> pick)
+    {
+        panel.Children.Clear();
+        foreach (var (id, name, sub) in choices)
+        {
+            bool on = id == current;
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -85,7 +106,7 @@ public partial class ClipPlayer
             });
             var tick = new TextBlock
             {
-                FontFamily = (FontFamily)FindResource("IconFont"), Text = "", FontSize = 13, VerticalAlignment = VerticalAlignment.Center,
+                FontFamily = (FontFamily)FindResource("IconFont"), Text = "\uE73E", FontSize = 13, VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("AccentTextFillColorPrimaryBrush"), Visibility = on ? Visibility.Visible : Visibility.Collapsed,
             };
             Grid.SetColumn(tick, 1); grid.Children.Add(tick);
@@ -97,10 +118,10 @@ public partial class ClipPlayer
                 Background = on ? (Brush)FindResource("ControlFillColorSecondaryBrush") : Brushes.Transparent,
                 BorderBrush = on ? (Brush)FindResource("ControlStrokeColorDefaultBrush") : Brushes.Transparent,
             };
-            System.Windows.Automation.AutomationProperties.SetName(button, $"Timeline detail: {name}");
+            System.Windows.Automation.AutomationProperties.SetName(button, $"{group}: {name}");
             string chosen = id;
-            button.Click += (_, _) => { SetDetail(chosen); BuildGear(); };
-            GearOptions.Children.Add(button);
+            button.Click += (_, _) => { pick(chosen); BuildGear(); };
+            panel.Children.Add(button);
         }
     }
 

@@ -63,6 +63,16 @@ public sealed class Settings
     /// <summary>Fade the clip manager (and that picture) in and out instead of showing them at once.</summary>
     public bool FadeIn { get; set; } = true;
 
+    /// <summary>How big the clip manager's interface is, in percent (70 to 250).</summary>
+    public int UiZoom { get; set; } = 100;
+
+    /// <summary>What happens when the playhead is dragged during playback: "resume" (pause while dragging, then carry on), "stay" (pause and stay paused), "live" (keep playing while dragging).</summary>
+    public string ScrubMode { get; set; } = "resume";
+
+    /// <summary>How far the editor's arrow keys move the playhead, in seconds: plain, and with Shift held.</summary>
+    public double SeekSeconds { get; set; } = 5;
+    public double SeekShiftSeconds { get; set; } = 1;
+
     /// <summary>What the editor's timeline shows besides the times: "wave" (the sound), "film" (pictures), "both" or "none".</summary>
     public string TimelineDetail { get; set; } = "wave";
 

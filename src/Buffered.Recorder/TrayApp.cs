@@ -53,7 +53,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(_pauseItem);
         menu.Items.Add("Open clips folder", null, (_, _) => OpenFolder());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Quit", null, (_, _) => Quit());
+        menu.Items.Add("Quit", null, (_, _) => { CloseClipManager(); Quit(); });
 
         _tray = new NotifyIcon { Icon = _iconBusy, Text = "Buffered", ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => OpenWindow();
@@ -176,7 +176,8 @@ sealed class TrayApp : ApplicationContext
         if (_ticks % 100 == 0) { CheckSteamVr(); CheckGameWindow(); }
         if (_ticks % 100 == 0 && _engine is { } e)
         {
-            int m = (int)e.BufferedSeconds / 60, s = (int)e.BufferedSeconds % 60;
+            double shownSeconds = e.BufferSeconds > 0 ? Math.Min(e.BufferedSeconds, e.BufferSeconds) : e.BufferedSeconds;   // can briefly hold a moment more than its length
+            int m = (int)shownSeconds / 60, s = (int)shownSeconds % 60;
             _status.Text = $"Recording · {m}:{s:00} buffered";
             _tray.Text = $"Buffered · {m}:{s:00} buffered";
         }
@@ -411,6 +412,20 @@ sealed class TrayApp : ApplicationContext
     {
         if (_lastClip is not null && File.Exists(_lastClip))
             Process.Start("explorer.exe", $"/select,\"{_lastClip}\"");
+    }
+
+    /// <summary>Quitting from the tray menu also closes the clip manager, so no half of Buffered is left running. (A restart doesn't.)</summary>
+    private static void CloseClipManager()
+    {
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("BufferedUI"))
+            {
+                try { p.CloseMainWindow(); } catch { }
+                p.Dispose();
+            }
+        }
+        catch { }
     }
 
     private void Quit()

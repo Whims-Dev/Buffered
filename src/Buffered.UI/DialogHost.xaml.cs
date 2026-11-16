@@ -131,6 +131,31 @@ public partial class DialogHost : UserControl
     private void Confirm_Click(object sender, RoutedEventArgs e) => Close(true);
     private void Cancel_Click(object sender, RoutedEventArgs e) => Close(false);
 
+    private bool _pressedOutside;
+
+    /// <summary>
+    /// Clicking on the dimmed area around a prompt closes it, the same as Cancel (or OK, for a plain message). The whole click is
+    /// taken here, press and release: closing on the press would let the release land on whatever is underneath and click it.
+    /// </summary>
+    private void Scrim_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, Scrim)) return;   // a click on the card itself isn't "outside"
+        _pressedOutside = true;
+        Scrim.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void Scrim_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_pressedOutside) return;
+        _pressedOutside = false;
+        Scrim.ReleaseMouseCapture();
+        e.Handled = true;
+        var over = e.GetPosition(Card);
+        bool onCard = over.X >= 0 && over.Y >= 0 && over.X <= Card.ActualWidth && over.Y <= Card.ActualHeight;
+        if (!onCard) Close(false);   // pressed and released outside the card
+    }
+
     private void Scrim_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape) { Close(false); e.Handled = true; }

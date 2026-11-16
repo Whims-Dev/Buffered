@@ -415,6 +415,28 @@ public partial class ClipPlayer
         catch (Exception ex) { ShareResult.Text = "Couldn't copy the link: " + ex.Message; }
     }
 
+    private bool _sharePressedOutside;
+
+    /// <summary>Clicking on the dimmed area around the share window closes it (not while a copy is being made). The whole click is taken, so nothing underneath reacts.</summary>
+    private void ShareScrim_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, ShareScrim)) return;
+        _sharePressedOutside = true;
+        ShareScrim.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void ShareScrim_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (!_sharePressedOutside) return;
+        _sharePressedOutside = false;
+        ShareScrim.ReleaseMouseCapture();
+        e.Handled = true;
+        var over = e.GetPosition(ShareCard);
+        bool onCard = over.X >= 0 && over.Y >= 0 && over.X <= ShareCard.ActualWidth && over.Y <= ShareCard.ActualHeight;
+        if (!onCard && !_shareBusy) ShareScrim.Visibility = Visibility.Collapsed;
+    }
+
     private void ShareClose_Click(object sender, RoutedEventArgs e) { if (!_shareBusy) ShareScrim.Visibility = Visibility.Collapsed; }
 
     private void Share_PreviewKeyDown(object sender, KeyEventArgs e)

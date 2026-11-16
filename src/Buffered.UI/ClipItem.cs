@@ -340,6 +340,52 @@ internal static class Media
         }
     }
 
+    /// <summary>A clip's frame rate (frames per second), or 0 if it can't be read.</summary>
+    public static async Task<double> GetFrameRateAsync(string clip)
+    {
+        var (code, output) = await RunAsync(Tools.Ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0", clip);
+        if (code != 0) return 0;
+        var parts = output.Trim().Split('/');
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (parts.Length == 2 && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, ci, out var n) && double.TryParse(parts[1], System.Globalization.NumberStyles.Float, ci, out var d) && d > 0) return n / d;
+        return double.TryParse(parts[0], System.Globalization.NumberStyles.Float, ci, out var f) ? f : 0;
+    }
+
+    private static readonly char NewLine = (char)10;
+
+    /// <summary>The longest stretch between two keyframes in a file's video, in seconds (read from the file's index, so it is quick). Seeking is slow when this is long.</summary>
+    public static async Task<double> MaxKeyframeGapAsync(string path)
+    {
+        var (code, output) = await RunAsync(Tools.Ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path);
+        if (code != 0) return 0;
+        double last = double.NaN, max = 0;
+        foreach (var line in output.Split(NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Trim().Split(',');
+            if (parts.Length < 2 || !parts[1].StartsWith('K')) continue;
+            if (!double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var t)) continue;
+            if (!double.IsNaN(last)) max = Math.Max(max, t - last);
+            last = t;
+        }
+        return max;
+    }
+
+    /// <summary>
+    /// A copy of a file for the editor to play, with a keyframe every few frames so jumping around in it is quick. The video is encoded
+    /// again, fast and at low priority, and the sound is copied untouched.
+    /// </summary>
+    public static async Task<string?> MakeScrubCopyAsync(string source)
+    {
+        Directory.CreateDirectory(PreviewDir);
+        string path = System.IO.Path.Combine(PreviewDir, Guid.NewGuid().ToString("N") + ".mp4");
+        var (code, _) = await RunAsync(Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-map", "0:v:0", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-g", "6", "-keyint_min", "6", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-threads", "2",
+            "-c:a", "copy", "-fps_mode", "passthrough", "-movflags", "+faststart", path);   // same frame timing as the original, so the trim points still line up
+        if (code == 0 && File.Exists(path)) return path;
+        try { File.Delete(path); } catch { }
+        return null;
+    }
+
     public static void CleanPreviews()
     {
         try { if (Directory.Exists(PreviewDir)) foreach (var f in Directory.EnumerateFiles(PreviewDir)) { try { File.Delete(f); } catch { } } }

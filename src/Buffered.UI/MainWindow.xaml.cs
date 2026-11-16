@@ -36,6 +36,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings = settings;
         InitializeComponent();
         DataContext = this;
+        StartZoom();
         BuildSettingsLayout();
         WebhookList.Attach(_settings);
         ColorPalette.Settings = _settings;
@@ -52,7 +53,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Player.Dialogs = Dialogs;
         Player.CloseRequested += () => { Player.Visibility = Visibility.Collapsed; ClipsPage.Visibility = Visibility.Visible; LoadClips(); };
         Player.OpenEditorSettingsRequested += () => { _settingsSection = "edi"; NavSettings.IsChecked = true; ShowSettings(); };
-        Player.TimelineDetailChanged += () => { _loading = true; SelectTimeline(); _loading = false; };
+        Player.TimelineDetailChanged += () => { _loading = true; SelectTimeline(); SelectScrub(); _loading = false; };
         Player.FileReplaced += path => { _allClips.RemoveAll(c => c.Path == path); }; // drop the cached thumbnail and size
 
         _statusTimer.Tick += async (_, _) => await PollStatusAsync();
@@ -301,7 +302,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 StatusText.Text = "Recording";
                 StartRecorderButton.Visibility = Visibility.Collapsed;
                 ShowPauseButton(paused: false);
-                BufferText.Text = $"Buffer {FormatClock(s.BufferedSeconds)} / {FormatClock(s.BufferSeconds)}";
+                BufferText.Text = $"Buffer {FormatClock(s.BufferSeconds > 0 ? Math.Min(s.BufferedSeconds, s.BufferSeconds) : s.BufferedSeconds)} / {FormatClock(s.BufferSeconds)}";   // the buffer trims at a keyframe, so it can hold a moment more than its length: show it as full
                 BufferBar.Visibility = Visibility.Visible;
                 BufferBar.Value = s.BufferSeconds > 0 ? Math.Min(100, s.BufferedSeconds / s.BufferSeconds * 100) : 0;
                 VramText.Text = s.VramMb >= 0 ? $"VRAM {s.VramMb} MB" : "";
@@ -396,9 +397,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SoftwareBox.IsChecked = _settings.UiSoftwareRendering;
         SplashBox.IsChecked = _settings.ShowSplash;
         FadeBox.IsChecked = _settings.FadeIn;
+        ShowBorderHint();
+        SelectZoomBox();
         TimelineBox.ItemsSource = TimelineChoices;
         TimelineBox.DisplayMemberPath = nameof(TimelineChoice.Name);
-        SelectTimeline();
+        ScrubBox.ItemsSource = ScrubChoices;
+        ScrubBox.DisplayMemberPath = nameof(TimelineChoice.Name);
+        SeekBox.ItemsSource = SeekChoices; SeekBox.DisplayMemberPath = nameof(SeekChoice.Name);
+        SeekShiftBox.ItemsSource = SeekChoices; SeekShiftBox.DisplayMemberPath = nameof(SeekChoice.Name);
+        SelectTimeline(); SelectScrub(); SelectSeek();
         UpdateRamHint();
         _hardKey = HardKey();
         _loading = false;
@@ -540,11 +547,86 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Setting_Changed(GameList, e);
     }
 
+    /// <summary>Windows draws a coloured border around what is being captured. Windows 11 lets an app turn it off if the user allows it; Windows 10 never does.</summary>
+    private void ShowBorderHint()
+    {
+        bool win11 = Environment.OSVersion.Version.Build >= 22000;
+        BorderHint.Text = win11
+            ? "Windows draws a thin border around the screen while recording, and Buffered asks it not to. If you still see it, open Windows' settings and allow Buffered under \"Screenshot borders\" (Privacy & security)."
+            : "Windows 10 draws a yellow border around the screen while anything records it, and it doesn't let apps hide it. Windows 11 does.";
+        BorderButton.Visibility = win11 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void BorderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:privacy-graphicscapturewithoutborder") { UseShellExecute = true }); } catch { }
+    }
+
     private sealed record TimelineChoice(string Id, string Name);
     private static readonly TimelineChoice[] TimelineChoices =
     {
         new("wave", "Waveform"), new("film", "Filmstrip"), new("both", "Waveform and filmstrip"), new("none", "Plain"),
     };
+
+    private static readonly TimelineChoice[] ScrubChoices =
+    {
+        new("resume", "Pause, then keep playing"), new("stay", "Pause, and stay paused"), new("live", "Keep playing"),
+    };
+
+    private sealed record SeekChoice(double Value, string Name);
+    private static readonly SeekChoice[] SeekChoices = new[] { 0.5, 1, 2, 3, 5, 10, 15, 30, 60 }.Select(v => new SeekChoice(v, v % 1 == 0 ? $"{v:0}" : $"{v:0.#}")).ToArray();   // just the number: the unit is written beside the boxes, so typing needs no deleting
+
+    private static string SecondsLabel(double v) => v % 1 == 0 ? $"{v:0}" : $"{v:0.##}";
+
+    private void ShowSeek(ComboBox box, double value)
+    {
+        var preset = SeekChoices.FirstOrDefault(c => Math.Abs(c.Value - value) < 1e-9);
+        if (preset is not null) box.SelectedItem = preset;
+        else { box.SelectedItem = null; box.Text = SecondsLabel(value); }   // a distance typed in by the user
+    }
+
+    private void SelectSeek()
+    {
+        ShowSeek(SeekBox, _settings.SeekSeconds > 0 ? _settings.SeekSeconds : 5);
+        ShowSeek(SeekShiftBox, _settings.SeekShiftSeconds > 0 ? _settings.SeekShiftSeconds : 1);
+    }
+
+    /// <summary>Reads a distance from a box: the chosen item, or what was typed ("7", "7.5", "7,5 s"). Returns <paramref name="keep"/> if it makes no sense.</summary>
+    private static double ReadSeek(ComboBox box, double keep)
+    {
+        if (box.SelectedItem is SeekChoice c && c.Name == (box.Text ?? "").Trim()) return c.Value;   // a picked item (the text may have been edited since: then it is read below)
+        string t = (box.Text ?? "").Trim().ToLowerInvariant().Replace(',', '.');
+        foreach (var suffix in new[] { "seconds", "second", "secs", "sec", "s" }) if (t.EndsWith(suffix)) { t = t[..^suffix.Length].Trim(); break; }
+        return double.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 0.1 && v <= 3600 ? Math.Round(v, 2) : keep;
+    }
+
+    /// <summary>A typed distance is taken when the box loses focus or Enter is pressed: tidied up (or put back, if it wasn't a number) and saved.</summary>
+    private void Seek_Commit(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not ComboBox box) return;
+        bool shift = box == SeekShiftBox;
+        double keep = shift ? _settings.SeekShiftSeconds : _settings.SeekSeconds;
+        double value = ReadSeek(box, keep);
+        _loading = true; ShowSeek(box, value); _loading = false;
+        if (Math.Abs(value - keep) > 1e-9) { if (shift) _settings.SeekShiftSeconds = value; else _settings.SeekSeconds = value; Setting_Changed(box, e); }
+    }
+
+    private void Seek_GotFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is ComboBox box)
+            box.Dispatcher.BeginInvoke(new Action(() => (box.Template.FindName("PART_EditableTextBox", box) as TextBox)?.SelectAll()), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void Seek_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter && e.Key != Key.Return) return;
+        Seek_Commit(sender, e);
+        Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    private void SelectScrub() =>
+        ScrubBox.SelectedItem = ScrubChoices.FirstOrDefault(c => c.Id == _settings.ScrubMode) ?? ScrubChoices[0];
 
     private void SelectTimeline() =>
         TimelineBox.SelectedItem = TimelineChoices.FirstOrDefault(c => c.Id == _settings.TimelineDetail) ?? TimelineChoices[0];
@@ -577,6 +659,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settings.ShowSplash = SplashBox.IsChecked == true;
         _settings.FadeIn = FadeBox.IsChecked == true;
         if (TimelineBox.SelectedItem is TimelineChoice tc) _settings.TimelineDetail = tc.Id;
+        if (ScrubBox.SelectedItem is TimelineChoice sc) _settings.ScrubMode = sc.Id;
+        _settings.SeekSeconds = ReadSeek(SeekBox, _settings.SeekSeconds);
+        _settings.SeekShiftSeconds = ReadSeek(SeekShiftBox, _settings.SeekShiftSeconds);
 
         UpdateRamHint();
         ApplyText.Text = "Applying…";
