@@ -66,6 +66,12 @@ Windows Graphics Capture leaks a small amount of memory for each capture session
 - Changing the recorded monitor or game, or resizing a recorded window, restarts recording and empties the buffer.
 - The recorder and clip manager are two small programs that talk over a named pipe.
 
+## A note from the author
+
+> I created Buffered because most clipping software I've tried is incredibly resource intensive. I have a GPU with only 8 GB of VRAM, and I can't spare a gigabyte for one process.
+>
+> Life is beautiful, and clipping software is a great tool for capturing the great moments.
+
 ## Built with AI
 
 Buffered was written with a lot of help from an AI coding assistant (Claude, made by Anthropic), following the author's design and feedback. The author directs what it does and tests it by using it, but the code has not had an independent review, and it has been tried on one PC (Windows 11, NVIDIA GPU). Expect rough edges and bugs, especially on other hardware.
