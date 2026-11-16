@@ -26,22 +26,8 @@ public partial class App : Application
         if (settings.UiSoftwareRendering)
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
-        // Show the small start-up picture first; everything else waits until it has been drawn.
-        try
-        {
-            if (settings.ShowSplash) { _splash = new SplashWindow(settings.FadeIn); _splash.Show(); _splashClock.Restart(); }
-        }
-        catch (Exception ex)   // no picture is better than no app
-        {
-            _splash = null;
-            try
-            {
-                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered");
-                System.IO.Directory.CreateDirectory(dir);
-                System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "window.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} start-up picture failed:{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
-            }
-            catch { }
-        }
+        // The small start-up picture runs on a thread of its own, so the work of building the clip manager's window can't make it stutter.
+        if (settings.ShowSplash) StartSplash(settings.FadeIn);
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
         {
             try { Continue(e.Args, settings); }
@@ -49,9 +35,38 @@ public partial class App : Application
         }));
     }
 
-    private SplashWindow? _splash;
+    private volatile SplashWindow? _splash;
     private readonly System.Diagnostics.Stopwatch _splashClock = new();
     private static readonly TimeSpan SplashMinimum = TimeSpan.FromSeconds(1);
+
+    private void StartSplash(bool fade)
+    {
+        _splashClock.Restart();
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var window = new SplashWindow(fade);
+                window.Closed += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+                _splash = window;
+                window.Show();
+                System.Windows.Threading.Dispatcher.Run();
+            }
+            catch (Exception ex)   // no picture is better than no app
+            {
+                _splash = null;
+                try
+                {
+                    string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered");
+                    System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "window.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} start-up picture failed:{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+                }
+                catch { }
+            }
+        }) { IsBackground = true, Name = "splash" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
 
     /// <summary>
     /// Called when the clip manager's window has drawn its first frame and is about to be shown. If the start-up picture hasn't been
@@ -71,13 +86,17 @@ public partial class App : Application
     private void FadeSplash()
     {
         var s = _splash; _splash = null;
-        try { s?.FadeOutAndClose(); } catch { try { s?.Close(); } catch { } }
+        if (s is null) return;
+        try { s.Dispatcher.BeginInvoke(new Action(s.FadeOutAndClose)); }   // the picture lives on its own thread
+        catch { }
     }
 
     private void CloseSplash()
     {
         var s = _splash; _splash = null;
-        try { s?.Close(); } catch { }
+        if (s is null) return;
+        try { s.Dispatcher.BeginInvoke(new Action(() => { try { s.Close(); } catch { } })); }
+        catch { }
     }
 
     private void Continue(string[] args, Settings settings)

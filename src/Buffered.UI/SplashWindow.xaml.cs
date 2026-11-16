@@ -6,11 +6,15 @@ using System.Windows.Threading;
 
 namespace Buffered.UI;
 
-/// <summary>The small picture shown while Buffered opens. Like the main window, it stays hidden until its first frame is drawn (so it never flashes white), then fades in.</summary>
+/// <summary>
+/// The small picture shown while Buffered opens. Like the main window, it stays hidden until its first frame is drawn (so it never flashes
+/// white), then its contents fade in. The window itself is an ordinary one, so the loading bar is drawn by Windows' own animation engine and
+/// keeps moving smoothly even while the main window is being built on this thread.
+/// </summary>
 public partial class SplashWindow : Window
 {
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    private const int DWMWA_CLOAK = 13;
+    private const int DWMWA_CLOAK = 13, DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2;
 
     private readonly bool _fade;
 
@@ -34,8 +38,10 @@ public partial class SplashWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        try { var h = new WindowInteropHelper(this).Handle; int round = DWMWCP_ROUND; DwmSetWindowAttribute(h, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int)); }
+        catch { }
         SetCloak(true);
-        // The first frame is ready: let it fade in (the clip manager's own start-up work is queued behind this).
+        // The first frame is ready: show it and let the contents fade in (the clip manager's own start-up work is queued behind this).
         ContentRendered += (_, _) => Appear();
         var safety = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         safety.Tick += (_, _) => { safety.Stop(); Appear(); };
@@ -49,8 +55,8 @@ public partial class SplashWindow : Window
         if (_appeared) return;
         _appeared = true;
         SetCloak(false);
-        if (!_fade) { Opacity = 1; return; }
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+        if (!_fade) { Root.Opacity = 1; return; }
+        Root.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
     }
 
     /// <summary>Fades the picture out, then closes it (or just closes it, if fading is turned off).</summary>
@@ -58,8 +64,8 @@ public partial class SplashWindow : Window
     {
         _appeared = true;
         if (!_fade) { try { Close(); } catch { } return; }
-        var fade = new DoubleAnimation(Opacity, 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+        var fade = new DoubleAnimation(Root.Opacity, 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
         fade.Completed += (_, _) => { try { Close(); } catch { } };
-        BeginAnimation(OpacityProperty, fade);
+        Root.BeginAnimation(OpacityProperty, fade);
     }
 }
