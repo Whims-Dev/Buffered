@@ -22,7 +22,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          FFMPEG_RELEASE: ffmpeg-slim-2   # the slim build made by the "ffmpeg" workflow; change this when that is rebuilt and published again
+          FFMPEG_RELEASE: ffmpeg-slim-3   # the slim build made by the "ffmpeg" workflow; change this when that is rebuilt and published again
         run: |
           gh release download $env:FFMPEG_RELEASE --pattern ffmpeg-slim-win64.zip --repo $env:GITHUB_REPOSITORY
           $digest = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:FFMPEG_RELEASE" --jq '.assets[] | select(.name=="ffmpeg-slim-win64.zip") | .digest'
