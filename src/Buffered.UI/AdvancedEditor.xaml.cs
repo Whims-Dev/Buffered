@@ -362,6 +362,60 @@ public partial class AdvancedEditor : UserControl
 
     private void FitVideo_Click(object sender, RoutedEventArgs e) => ApplyToSelection(o => o with { Scale = 1, PosX = 0.5, PosY = 0.5 }, "fit");
 
+    /// <summary>A punch-in zoom or a shake on the selected item (or the picture under the playhead if nothing is selected), starting at the playhead.</summary>
+    private void Effect(bool shake)
+    {
+        var p = _h.Current;
+        var it = _selected is { } sid ? p.Find(sid) : p.Items.FirstOrDefault(i => i.Kind == ItemKind.Video && _t >= i.Start && _t < i.End);
+        if (it is null || it.Kind == ItemKind.Audio || _t < it.Start || _t >= it.End) { StatusText.Text = "Put the playhead on a video, picture or text first"; return; }
+        _h.Apply(shake ? p.Shake(it.Id, _t) : p.PunchIn(it.Id, _t));
+        AfterEdit();
+        StatusText.Text = shake ? "Shake added at the playhead (X)" : "Punch-in added at the playhead (P)";
+    }
+
+    private static readonly (string Name, (double, double)[] Parts)[] Ramps =
+    {
+        ("Slow-mo: ease down, hold, ease back", new[] { (0.2, 0.6), (0.6, 0.25), (0.2, 0.6) }),
+        ("Hero time: fast, deep slow-mo, fast", new[] { (0.3, 1.6), (0.5, 0.2), (0.5, 1.6) }),
+        ("Bullet time: nearly frozen", new[] { (0.15, 0.5), (0.7, 0.1), (0.15, 0.5) }),
+        ("Speed up: 3x for a moment", new[] { (1.5, 3.0) }),
+        ("Slow-mo dip: 0.4x for a second", new[] { (0.4, 0.4) }),
+    };
+
+    private void Ramp_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selected is not { } sid || _h.Current.Find(sid) is not { } it || it.Kind is not (ItemKind.Video or ItemKind.Audio) || _t <= it.Start || _t >= it.End)
+        { StatusText.Text = "Select a video and put the playhead inside it first"; return; }
+        var menu = new ContextMenu { PlacementTarget = RampButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var (name, parts) in Ramps)
+        {
+            var m = new MenuItem { Header = name };
+            m.Click += (_, _) =>
+            {
+                var next = _h.Current.SpeedRamp(sid, _t, parts);
+                if (ReferenceEquals(next, _h.Current)) { StatusText.Text = "That spot is too close to the edge of the clip"; return; }
+                _h.Apply(next); AfterEdit(); StatusText.Text = "Speed ramp added: " + name.Split(':')[0];
+            };
+            menu.Items.Add(m);
+        }
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Puts a marker on each beat of the selected sound, so edits can be cut and snapped to the music.</summary>
+    private void Beats_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selected is not { } sid || _h.Current.Find(sid) is not { Kind: ItemKind.Audio } it) return;
+        if (!TimelineView.Waveforms.TryGetValue($"{it.Source}#{it.Stream}", out var bins)) { StatusText.Text = "The sound is still being read, try again in a moment"; return; }
+        var times = BeatFinder.Find(bins, TimelineView.WaveBinSeconds)
+            .Where(b => b >= it.SourceIn && b < it.SourceOut).Select(b => it.Start + (b - it.SourceIn) / it.Props.Speed).ToList();
+        if (times.Count == 0) { StatusText.Text = "No clear beats found in this sound"; return; }
+        _h.Apply(_h.Current.AddMarkers(times)); AfterEdit();
+        StatusText.Text = $"Marked {times.Count} beats. Items snap to the markers (M adds or removes one at the playhead)";
+    }
+
+    private void Punch_Click(object sender, RoutedEventArgs e) => Effect(false);
+    private void Shake_Click(object sender, RoutedEventArgs e) => Effect(true);
+
     /// <summary>Makes the selected video or picture small and puts it in a corner (or the middle) of the frame, like a facecam.</summary>
     private void Layout_Click(object sender, RoutedEventArgs e)
     {
@@ -605,8 +659,8 @@ public partial class AdvancedEditor : UserControl
         PropsHint.Visibility = Visibility.Collapsed; PropsBody.Visibility = Visibility.Visible;
         bool picture = it.Kind != ItemKind.Audio, overlay = it.Kind is ItemKind.Text or ItemKind.Image, timed = it.Kind is ItemKind.Video or ItemKind.Audio;
         Vis(picture, OpacityRow, OpacitySlider);
-        Vis(it.Kind == ItemKind.Audio, VolumeRow, VolumeSlider);
-        Vis(timed, SpeedRow, SpeedSlider);
+        Vis(it.Kind == ItemKind.Audio, VolumeRow, VolumeSlider, BeatButton);
+        Vis(timed, SpeedRow, SpeedSlider, RampButton);
         Vis(it.Kind == ItemKind.Text, WordsPanel);
         Vis(overlay || it.Kind == ItemKind.Video, PlacePanel);
         Vis(it.Kind is ItemKind.Video or ItemKind.Image, CropPanel);
@@ -712,6 +766,8 @@ public partial class AdvancedEditor : UserControl
             case Key.D when ctrl: Duplicate(); break;
             case Key.E when ctrl: _ = ExportAsync(); break;
             case Key.Delete: DeleteSelected(shift); break;
+            case Key.P when !ctrl: Effect(false); break;
+            case Key.X when !ctrl: Effect(true); break;
             case Key.A when ctrl: Tl.SetSelection(_h.Current.Items.Select(i => i.Id)); _selected = Tl.Selected; ShowProps(); break;
             case Key.Z when ctrl: _h.Undo(); AfterEdit(); break;
             case Key.Y when ctrl: _h.Redo(); AfterEdit(); break;

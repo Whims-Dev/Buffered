@@ -73,6 +73,15 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
         return WithFrames(p, (near >= 0 ? f.SetItem(near, key) : f.Add(key)).Sort((a, b) => a.Time.CompareTo(b.Time)));
     }
 
+    /// <summary>Replaces whatever keyframes a property has between two times (item time) with these ones.</summary>
+    public ItemProps WithKeyBurst(KeyProp p, double from, double to, IEnumerable<(double Time, double Value)> frames)
+    {
+        var r = this;
+        foreach (var k in FramesOf(p).Where(k => k.Time > from - 1e-6 && k.Time < to + 1e-6).ToList()) r = r.WithoutKey(p, k.Time);
+        foreach (var (t, v) in frames) r = r.WithKey(p, t, v);
+        return r;
+    }
+
     public ItemProps WithoutKey(KeyProp p, double time)
     {
         var f = FramesOf(p);
@@ -153,6 +162,14 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
     {
         int near = Marks.FindIndex(m => Math.Abs(m - time) < 0.05);
         return this with { Markers = near >= 0 ? Marks.RemoveAt(near) : Marks.Add(time).Sort() };
+    }
+
+    /// <summary>Puts markers at these times (those already within a few hundredths of one are skipped).</summary>
+    public Project AddMarkers(IEnumerable<double> times)
+    {
+        var list = Marks;
+        foreach (var t in times.Where(t => t >= 0)) if (!list.Any(m => Math.Abs(m - t) < 0.05)) list = list.Add(t);
+        return this with { Markers = list.Sort() };
     }
 
     public const double MinLength = 0.05;   // nothing shorter than this is left behind by a cut
@@ -491,6 +508,82 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
         if (item is null) return this;
         double t = Math.Clamp(timelineTime - item.Start, 0, item.Length);
         return SetProps(id, o => o.WithKey(prop, t, value));
+    }
+
+    /// <summary>
+    /// A speed ramp: from the playhead on, the next few moments of the item (and of the sound linked to it) play at different speeds, one after another (each is source seconds and a speed),
+    /// then the rest carries on at its old speed. The item is cut into pieces for this, and what comes after it on each lane moves to make room (or close up).
+    /// </summary>
+    public Project SpeedRamp(Guid id, double timelineTime, IReadOnlyList<(double Source, double Speed)> segments)
+    {
+        var anchor = Find(id);
+        if (anchor is null) return this;
+        var p = this;
+        var made = new Dictionary<int, Guid>();
+        bool any = false;
+        foreach (var m in LinkedWith(anchor).ToList())
+        {
+            int tr = p.TrackOf(m.Id);
+            if (tr < 0 || p.Tracks[tr].Locked) return this;
+            double r = timelineTime - m.Start;
+            if (r <= MinLength || r >= m.Length - MinLength) continue;
+            double sp = m.Props.Speed, s0 = m.SourceIn + sp * r, cursor = s0, at = timelineTime;
+            var pieces = new List<TimelineItem>();
+            Guid? Link(int k) { if (m.LinkId is null) return null; if (!made.TryGetValue(k, out var g)) made[k] = g = Guid.NewGuid(); return g; }
+            var pre = m with { SourceOut = s0, Props = m.Props.Slice(0, r) with { FadeOut = 0 } };
+            for (int k = 0; k < segments.Count; k++)
+            {
+                double len = Math.Min(segments[k].Source, m.SourceOut - cursor);
+                if (len < 0.02) break;
+                double speed = Math.Clamp(segments[k].Speed, 0.1, 8);
+                pieces.Add(m with { Id = Guid.NewGuid(), SourceIn = cursor, SourceOut = cursor + len, Start = at, LinkId = Link(k),
+                                    Props = m.Props.Slice((cursor - m.SourceIn) / sp, len / sp) with { Speed = speed, FadeIn = 0, FadeOut = 0 } });
+                at += len / speed; cursor += len;
+            }
+            if (m.SourceOut - cursor > 0.02)
+            {
+                var rest = m.Props.Slice((cursor - m.SourceIn) / sp, (m.SourceOut - cursor) / sp) with { FadeIn = 0 };
+                pieces.Add(m with { Id = Guid.NewGuid(), SourceIn = cursor, Start = at, LinkId = Link(99), Props = rest });
+                at += (m.SourceOut - cursor) / sp;
+            }
+            if (pieces.Count == 0) continue;
+            double delta = at - m.End;
+            p = p.Replace(tr, l => l.Select(i => i.Id != m.Id && i.Start >= m.End - 1e-9 ? i with { Start = Math.Max(0, i.Start + delta) } : i).Where(i => i.Id != m.Id).Append(pre).Concat(pieces).ToImmutableList());
+            any = true;
+        }
+        return any ? p : this;
+    }
+
+    /// <summary>A quick push-in: the picture grows by <paramref name="amount"/> (1.3 = 30% bigger) in a tenth of a second and eases back over <paramref name="length"/> seconds. For hits and drops.</summary>
+    public Project PunchIn(Guid id, double timelineTime, double amount = 1.3, double length = 0.45)
+    {
+        var item = Find(id);
+        if (item is null) return this;
+        double at = Math.Clamp(timelineTime - item.Start, 0, item.Length), end = Math.Min(item.Length, at + length);
+        if (end - at < 0.12) return this;
+        double v = item.Props.ValueAt(KeyProp.Scale, at), back = item.Props.ValueAt(KeyProp.Scale, end);
+        return SetProps(id, o => o.WithKeyBurst(KeyProp.Scale, at, end, new[] { (at, v), (at + 0.1, v * amount), (end, back) }));
+    }
+
+    /// <summary>A shake: the picture jitters from side to side and settles over <paramref name="length"/> seconds. <paramref name="strength"/> is a share of the frame.</summary>
+    public Project Shake(Guid id, double timelineTime, double strength = 0.025, double length = 0.5)
+    {
+        var item = Find(id);
+        if (item is null) return this;
+        double at = Math.Clamp(timelineTime - item.Start, 0, item.Length), end = Math.Min(item.Length, at + length);
+        if (end - at < 0.12) return this;
+        double x0 = item.Props.ValueAt(KeyProp.PosX, at), y0 = item.Props.ValueAt(KeyProp.PosY, at);
+        var xs = new List<(double, double)> { (at, x0) }; var ys = new List<(double, double)> { (at, y0) };
+        var rng = new Random(7);
+        int n = (int)((end - at) / 0.05);
+        for (int i = 1; i < n; i++)
+        {
+            double fade = 1 - (double)i / n, t = at + i * 0.05;
+            xs.Add((t, x0 + (i % 2 == 0 ? 1 : -1) * strength * fade * (0.6 + 0.4 * rng.NextDouble())));
+            ys.Add((t, y0 + (i % 3 == 0 ? 1 : -1) * strength * 0.7 * fade * (0.6 + 0.4 * rng.NextDouble())));
+        }
+        xs.Add((end, item.Props.ValueAt(KeyProp.PosX, end))); ys.Add((end, item.Props.ValueAt(KeyProp.PosY, end)));
+        return SetProps(id, o => o.WithKeyBurst(KeyProp.PosX, at, end, xs).WithKeyBurst(KeyProp.PosY, at, end, ys));
     }
 
     public Project RemoveKey(Guid id, KeyProp prop, double timelineTime)

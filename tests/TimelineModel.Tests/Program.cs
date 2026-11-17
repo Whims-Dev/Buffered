@@ -245,4 +245,24 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
     Check(q.Tracks.First(t => t.Id == snd[1].Id).IsHeardIn(q), "with no solo every unmuted lane is heard"); }
   var old = new ItemProps(); Check(old.Font == "Segoe UI" && old.Bold && old.Outline == 0 && old.Box is null, "text keeps its old look by default"); }
 
+// Effects: punch-in, shake, speed ramp
+{ var v = new TimelineItem(Guid.NewGuid(), ItemKind.Video, "a.mp4", 0, 10, 0, new ItemProps()); var after = new TimelineItem(Guid.NewGuid(), ItemKind.Video, "b.mp4", 0, 5, 10, new ItemProps());
+  var p0 = Base().Add(0, v)!.Add(0, after)!;
+  var pz = p0.PunchIn(v.Id, 3); var k = pz.Find(v.Id)!.Props.FramesOf(KeyProp.Scale);
+  Check(k.Count == 3 && Near(k[0].Value, 1) && k[1].Value > 1.2 && Near(k[2].Value, 1) && Near(k[0].Time, 3), "punch-in: grows then eases back");
+  var sh = p0.Shake(v.Id, 3); Check(sh.Find(v.Id)!.Props.FramesOf(KeyProp.PosX).Count > 5 && sh.Find(v.Id)!.Props.FramesOf(KeyProp.PosY).Count > 5, "shake: many position keys");
+  Check(ReferenceEquals(p0.PunchIn(v.Id, 9.99), p0), "no effect at the very end of an item");
+  var ramp = p0.SpeedRamp(v.Id, 4, new[] { (0.5, 0.5), (1.0, 0.25) });
+  var parts = ramp.Items.Where(i => i.Source == "a.mp4").OrderBy(i => i.Start).ToList();
+  Check(parts.Count == 4 && Near(parts[0].End, 4) && Near(parts[1].Start, 4) && Near(parts[1].Length, 1) && Near(parts[2].Length, 4) && Near(parts[3].Start, 9) && Near(parts[3].Length, 4.5), "speed ramp cuts the clip into slow and normal pieces");
+  Check(Near(parts[3].End, 13.5) && Near(ramp.Items.First(i => i.Source == "b.mp4").Start, 13.5), "and what follows moves to make room");
+  Check(Near(parts.Sum(x => x.SourceOut - x.SourceIn), 10), "no footage is lost or repeated"); }
+
+// Beats
+{ var bins = new float[1000]; for (int i = 0; i < bins.Length; i++) bins[i] = 0.03f; for (int b = 50; b < 1000; b += 50) for (int k = 0; k < 6; k++) bins[b + k] = 0.9f - 0.1f * k;   // a hit every half second, decaying
+  var beats = Buffered.UI.BeatFinder.Find(bins, 0.01);
+  Check(beats.Count >= 17 && beats.Count <= 19 && beats.All(t => Math.Abs((t / 0.5) - Math.Round(t / 0.5)) < 0.15), "beats are found at each hit of a steady rhythm");
+  Check(Buffered.UI.BeatFinder.Find(new float[1000].Select(_ => 0.3f).ToArray(), 0.01).Count == 0, "a steady drone has no beats");
+  var m = Base().AddMarkers(new[] { 1.0, 1.01, 2.0 }); Check(m.Marks.Count == 2, "markers close together are one"); }
+
 Console.WriteLine(fails == 0 ? "all passed" : $"{fails} FAILED"); return fails;

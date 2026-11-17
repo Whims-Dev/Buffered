@@ -118,6 +118,7 @@
                         <DockPanel x:Name="OpacityRow" Margin="0,0,0,10"><Button x:Name="KeyOpacity" Tag="Opacity" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="OpacityValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Opacity"/></DockPanel>
                         <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel x:Name="VolumeRow" Margin="0,0,0,10"><Button x:Name="KeyVolume" Tag="Volume" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="VolumeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Volume"/></DockPanel>
+                        <Button x:Name="BeatButton" Content="Mark the beats" Height="30" Margin="0,0,0,12" HorizontalAlignment="Left" Padding="12,0" Click="Beats_Click" ToolTip="Drops a marker on every beat of this sound. Clips and effects snap to markers"/>
                         <Slider x:Name="VolumeSlider" Minimum="0" Maximum="200" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel Margin="0,0,0,10"><TextBlock x:Name="FadeInValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade in"/></DockPanel>
                         <Slider x:Name="FadeInSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
@@ -125,6 +126,7 @@
                         <Slider x:Name="FadeOutSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel x:Name="SpeedRow" Margin="0,0,0,10"><TextBlock x:Name="SpeedValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Speed"/></DockPanel>
                         <Slider x:Name="SpeedSlider" Minimum="0.25" Maximum="4" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
+                        <Button x:Name="RampButton" Content="Speed ramp at the playhead…" Height="30" Margin="0,0,0,12" HorizontalAlignment="Left" Padding="12,0" Click="Ramp_Click" ToolTip="Slow-mo, hero time and more, starting where the playhead is"/>
                         <StackPanel x:Name="WordsPanel">
                             <TextBlock Text="Words" Margin="0,0,0,4"/>
                             <TextBox x:Name="WordsBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" Margin="0,0,0,10" TextChanged="WordsBox_Changed"/>
@@ -159,6 +161,11 @@
                             <StackPanel x:Name="FitRow" Orientation="Horizontal" Margin="0,0,0,12">
                                 <Button Content="Fit in the frame" Height="30" Margin="0,0,6,0" Click="FitVideo_Click" ToolTip="Show the whole picture, with bars if its shape differs"/>
                                 <Button Content="Fill the frame" Height="30" Click="FillVideo_Click" ToolTip="Zoom in until the picture covers the whole frame (the edges are cut off)"/>
+                            </StackPanel>
+                            <TextBlock Text="Effects at the playhead" Margin="0,0,0,6"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Button Content="Punch in" Height="30" Margin="0,0,6,0" Click="Punch_Click" ToolTip="A quick zoom in that eases back (P)"/>
+                                <Button Content="Shake" Height="30" Click="Shake_Click" ToolTip="Rattle the picture (X)"/>
                             </StackPanel>
                             <TextBlock x:Name="LayoutLabel" Text="Picture in picture" Margin="0,0,0,6"/>
                             <WrapPanel x:Name="LayoutRow" Margin="0,0,0,12">

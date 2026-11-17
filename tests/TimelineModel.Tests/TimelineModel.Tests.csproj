@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\Buffered.UI\TimelineModel.cs" Link="TimelineModel.cs" />
     <Compile Include="..\..\src\Buffered.UI\Subtitles.cs" Link="Subtitles.cs" />
+    <Compile Include="..\..\src\Buffered.UI\BeatFinder.cs" Link="BeatFinder.cs" />
   </ItemGroup>
 
 </Project>
