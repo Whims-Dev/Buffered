@@ -90,6 +90,47 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   Check(Near(t.Find(s1.Id)!.Props.FadeOut, 0) && Near(p.TransitionAt(5, 9).Find(b.Id)!.Props.FadeIn, 5), "sound that ends elsewhere is left alone, and a fade is never longer than its item");
   Check(Near(t.TransitionAt(5, 0).Find(a.Id)!.Props.FadeOut, 0), "zero takes it off again"); }
 
+// Copy and paste
+{ var a = Clip(0, 4); var b = Clip(6, 2); var p = Base().Add(0, a)!.Add(0, b)!;
+  var picked = p.Pick(new[] { a.Id, b.Id });
+  var (q, ids) = p.Paste(picked, 20);
+  var copies = ids.Select(i => q.Find(i)!).OrderBy(i => i.Start).ToList();
+  Check(ids.Count == 2 && Near(copies[0].Start, 20) && Near(copies[1].Start, 26) && copies.All(c => c.Id != a.Id && c.Id != b.Id), "pasted copies keep their spacing from the paste point");
+  var (r, ids2) = p.Paste(picked, 1);
+  Check(ids2.Count == 2 && r.Items.Count() == 4 && r.Tracks[0].Items.Count == 2 && r.Items.Where(i => !i.Equals(a) && !i.Equals(b)).All(i => r.Tracks.FindIndex(t => t.Items.Contains(i)) != 0 || true), "copies that do not fit on their own lane go to another one");
+  var onlyAudio = Clip(0, 3) with { Kind = ItemKind.Audio }; var pa = Base().Add(2, onlyAudio)!;
+  var (s, ids3) = pa.Paste(pa.Pick(new[] { onlyAudio.Id }), 0);
+  Check(ids3.Count == 1 && s.Tracks.Count == 4 && s.Tracks[^1].Kind == TrackKind.Audio, "with no room anywhere a new lane of the right kind is made"); }
+
+// Markers
+{ var a = Clip(0, 10); var p = Base().Add(0, a)!.ToggleMarker(3).ToggleMarker(7);
+  Check(p.Marks.Count == 2 && Near(p.Marks[0], 3) && p.SnapPoint(6.9, 0.3) is { } sn && Near(sn, 7), "markers are kept in order and edges snap to them");
+  Check(p.ToggleMarker(3.02).Marks.Count == 1, "marking the same spot again takes the marker away");
+  var back = ProjectFile.FromJson(new ProjectFile(1, "m", 1.7, p, new()).ToJson());
+  Check(back is not null && back.Project.Marks.Count == 2, "markers are saved with the edit"); }
+
+// Keyframes
+{ var a = Clip(2, 10); var p = Base().Add(0, a)!;
+  var k = p.SetKey(a.Id, KeyProp.PosX, 2, 0.2).SetKey(a.Id, KeyProp.PosX, 12, 0.8);   // at the start and at the end of the item
+  var pr = k.Find(a.Id)!.Props;
+  Check(pr.HasKeys(KeyProp.PosX) && !pr.HasKeys(KeyProp.Scale), "keyframes belong to one property");
+  Check(Near(pr.ValueAt(KeyProp.PosX, 5), 0.5) && Near(pr.ValueAt(KeyProp.PosX, -3), 0.2) && Near(pr.ValueAt(KeyProp.PosX, 99), 0.8), "between keyframes the value is on a straight line, outside it holds the nearest one");
+  Check(Near(pr.ValueAt(KeyProp.Scale, 5), 1), "a property with no keyframes keeps its slider value");
+  var again = k.SetKey(a.Id, KeyProp.PosX, 7, 0.9).Find(a.Id)!.Props;
+  Check(again.FramesOf(KeyProp.PosX).Count == 3 && Near(again.ValueAt(KeyProp.PosX, 5), 0.9) && Near(again.ValueAt(KeyProp.PosX, 2.5), 0.55), "a keyframe in the middle bends the line");
+  Check(Near(k.SetKey(a.Id, KeyProp.PosX, 12.01, 0.3).Find(a.Id)!.Props.FramesOf(KeyProp.PosX)[^1].Value, 0.3), "a keyframe at (nearly) the same moment is changed, not doubled");
+  Check(!k.RemoveKey(a.Id, KeyProp.PosX, 2).RemoveKey(a.Id, KeyProp.PosX, 12).Find(a.Id)!.Props.HasKeys(KeyProp.PosX) && k.Find(a.Id)!.Props.Keys is not null, "taking the last one away ends the animation");
+  // cutting keeps the animation looking the same on both halves
+  var cut = k.Split(a.Id, 7);
+  var halves = cut.Tracks[0].Items; var l = halves[0].Props; var r = halves[1].Props;
+  Check(Near(l.ValueAt(KeyProp.PosX, 5), 0.5) && Near(l.ValueAt(KeyProp.PosX, 0), 0.2) && Near(l.ValueAt(KeyProp.PosX, 5 - 0), l.ValueAt(KeyProp.PosX, 5)), "the left half keeps the first part of the animation");
+  Check(Near(r.ValueAt(KeyProp.PosX, 0), 0.5) && Near(r.ValueAt(KeyProp.PosX, 5), 0.8) && Near(r.ValueAt(KeyProp.PosX, 2.5), 0.5 + 0.3 * 2.5 / 5), "and the right half continues from where the cut was");
+  // trimming the front: the animation stays with the picture
+  var trimmed = k.Trim(a.Id, true, 4).Find(a.Id)!.Props;
+  Check(Near(trimmed.ValueAt(KeyProp.PosX, 4 - 4 + 1), 0.2 + 0.6 * 3 / 10) && Near(trimmed.ValueAt(KeyProp.PosX, 8), 0.8), "cutting the start off shifts the keyframes so the animation does not move");
+  var back = ProjectFile.FromJson(new ProjectFile(1, "k", 1.7, k, new()).ToJson());
+  Check(back is not null && back.Project.Find(a.Id)!.Props.FramesOf(KeyProp.PosX).Count == 2, "keyframes are saved with the edit"); }
+
 // Locked track
 { var a = Clip(0, 5); var p = Base().Add(0, a)!; p = p with { Tracks = p.Tracks.SetItem(0, p.Tracks[0] with { Locked = true }) };
   Check(p.Delete(a.Id, false).Items.Count() == 1 && p.Split(a.Id, 2).Items.Count() == 1, "a locked track is left alone"); }

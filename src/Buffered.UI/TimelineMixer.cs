@@ -19,7 +19,7 @@ internal sealed class TimelineMixer : IWaveProvider, IDisposable
     public bool IsPlaying => _playing;
 
     /// <summary>One audio item as the mixer needs it, frozen at the moment the edit changed.</summary>
-    public readonly record struct Lane(string Key, double Start, double SourceIn, double Length, double Speed, float Volume, double FadeIn, double FadeOut);
+    public readonly record struct Lane(string Key, double Start, double SourceIn, double Length, double Speed, float Volume, double FadeIn, double FadeOut, Keyframe[]? VolumeKeys = null);
 
     private volatile Lane[] _lanes = Array.Empty<Lane>();
     private readonly Dictionary<string, FileStream> _files = new();
@@ -176,7 +176,15 @@ internal sealed class TimelineMixer : IWaveProvider, IDisposable
         double into = t - lane.Start, left = lane.Start + lane.Length - t, env = 1;
         if (lane.FadeIn > 0 && into < lane.FadeIn) env = Math.Min(env, Math.Max(0, into) / lane.FadeIn);
         if (lane.FadeOut > 0 && left < lane.FadeOut) env = Math.Min(env, Math.Max(0, left) / lane.FadeOut);
-        return (float)(lane.Volume * env);
+        double volume = lane.Volume;
+        if (lane.VolumeKeys is { Length: > 0 } keys)   // animated volume: a straight line between the keyframes around this moment
+        {
+            double at = t - lane.Start;
+            if (at <= keys[0].Time) volume = keys[0].Value;
+            else if (at >= keys[^1].Time) volume = keys[^1].Value;
+            else { int i = 1; while (keys[i].Time < at) i++; double span = keys[i].Time - keys[i - 1].Time; volume = span <= 1e-9 ? keys[i].Value : keys[i - 1].Value + (keys[i].Value - keys[i - 1].Value) * (at - keys[i - 1].Time) / span; }
+        }
+        return (float)(volume * env);
     }
 
     public void Dispose()

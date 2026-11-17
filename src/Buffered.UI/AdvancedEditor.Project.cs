@@ -90,7 +90,7 @@ public partial class AdvancedEditor
         FillMedia();
         _mixer = new TimelineMixer(); _ = _mixer.PrepareAsync();
         _h = new EditHistory(Project.Empty((TrackKind.Video, "Overlay"), (TrackKind.Video, "Video"), (TrackKind.Audio, "Sound")));
-        _aspect = 16.0 / 9; _aspectSet = false; FitStage();
+        _aspect = 16.0 / 9; _aspectSet = false; FitStage(); ShowAspect();
         TitleText.Text = "New edit";
         _t = 0; _selected = null; Tl.SetSelection(Array.Empty<Guid>());
         Tl.Project = _h.Current; Tl.Playhead = 0; Tl.PixelsPerSecond = 40; Tl.ScrollTime = 0;
@@ -225,7 +225,7 @@ public partial class AdvancedEditor
 
         foreach (var kv in file.SourceLengths) TimelineView.SourceLengths[kv.Key] = kv.Value;
         _h = new EditHistory(file.Project);
-        _aspect = file.Aspect > 0.1 ? file.Aspect : 16.0 / 9; _aspectSet = true; FitStage();
+        _aspect = file.Aspect > 0.1 ? file.Aspect : 16.0 / 9; _aspectSet = true; FitStage(); ShowAspect();
         _projectPath = path; _projectName = file.Name; TitleText.Text = file.Name;
         _savedProject = unsaved ? Project.Empty() : file.Project;   // an edit restored from the autosave counts as unsaved (a different object, so it shows as changed)
         _t = 0; Tl.SetSelection(Array.Empty<Guid>()); _selected = null;

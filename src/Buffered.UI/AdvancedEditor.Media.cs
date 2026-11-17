@@ -235,7 +235,9 @@ public partial class AdvancedEditor
         {
             case ItemKind.Image:
             {
-                var item = new TimelineItem(Guid.NewGuid(), ItemKind.Image, e.Path, 0, 5, time, new ItemProps(), null, e.Label);
+                // a GIF lasts as long as one run through it; a still picture lasts 5 seconds. Either can be stretched by dragging its edge: a GIF just starts over.
+                double length = GifAnimation.IsGif(e.Path) && GifFor(e.Path) is { Total: > 0 } gif ? Math.Max(gif.Total, 0.5) : 5;
+                var item = new TimelineItem(Guid.NewGuid(), ItemKind.Image, e.Path, 0, length, time, new ItemProps(), null, e.Label);
                 _h.Apply(PlaceOrCreate(_h.Current, TrackKind.Video, item, true, "Overlay", hintLane));
                 AfterEdit();
                 break;
@@ -313,6 +315,14 @@ public partial class AdvancedEditor
         RenderOverlay();
     }
 
+    private readonly Dictionary<string, GifAnimation?> _gifs = new(StringComparer.OrdinalIgnoreCase);
+
+    private GifAnimation? GifFor(string path)
+    {
+        if (!_gifs.TryGetValue(path, out var g)) _gifs[path] = g = GifAnimation.Load(path);
+        return g;
+    }
+
     private BitmapImage? PictureFor(string path)
     {
         if (_pictures.TryGetValue(path, out var have)) return have;
@@ -334,6 +344,8 @@ public partial class AdvancedEditor
         foreach (var id in _layer.Keys.Where(k => active.All(a => a.Id != k)).ToList()) { Overlay.Children.Remove(_layer[id]); _layer.Remove(id); }
         foreach (var it in active)
         {
+            double at = t - it.Start;
+            double scale = it.Props.ValueAt(KeyProp.Scale, at), posX = it.Props.ValueAt(KeyProp.PosX, at), posY = it.Props.ValueAt(KeyProp.PosY, at);
             if (!_layer.TryGetValue(it.Id, out var box))
             {
                 box = new Border { Tag = it.Id, Cursor = Cursors.SizeAll, BorderBrush = Brushes.White, Background = Brushes.Transparent };
@@ -345,24 +357,24 @@ public partial class AdvancedEditor
                 if (box.Child is not TextBlock tb)
                     box.Child = tb = new TextBlock { TextAlignment = TextAlignment.Center, FontWeight = FontWeights.Bold, Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.75 } };
                 tb.Text = it.Props.Text ?? "";
-                tb.FontSize = Math.Max(4, H * it.Props.TextSize * it.Props.Scale);
+                tb.FontSize = Math.Max(4, H * it.Props.TextSize * scale);
                 try { tb.Foreground = (Brush)new BrushConverter().ConvertFromString(it.Props.Color)!; } catch (FormatException) { tb.Foreground = Brushes.White; }
             }
             else
             {
                 if (box.Child is not Image img) box.Child = img = new Image { Stretch = Stretch.Uniform };
-                var src = PictureFor(it.Source);
-                img.Source = src;
-                img.Width = W * 0.4 * it.Props.Scale;
+                // an animated GIF shows the picture for this moment and starts over when it has run through
+                img.Source = GifAnimation.IsGif(it.Source) && GifFor(it.Source) is { } gif ? gif.Frames[gif.IndexAt(t - it.Start)] : PictureFor(it.Source);
+                img.Width = W * 0.4 * scale;
             }
             double into = t - it.Start, left = it.End - t, env = 1;
             if (it.Props.FadeIn > 0 && into < it.Props.FadeIn) env = Math.Min(env, into / it.Props.FadeIn);
             if (it.Props.FadeOut > 0 && left < it.Props.FadeOut) env = Math.Min(env, left / it.Props.FadeOut);
-            box.Opacity = Math.Clamp(it.Props.Opacity * env, 0, 1);
+            box.Opacity = Math.Clamp(it.Props.ValueAt(KeyProp.Opacity, at) * env, 0, 1);
             box.BorderThickness = new Thickness(Tl.Selection.Contains(it.Id) ? 1.5 : 0);
             box.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Canvas.SetLeft(box, it.Props.PosX * W - box.DesiredSize.Width / 2);
-            Canvas.SetTop(box, it.Props.PosY * H - box.DesiredSize.Height / 2);
+            Canvas.SetLeft(box, posX * W - box.DesiredSize.Width / 2);
+            Canvas.SetTop(box, posY * H - box.DesiredSize.Height / 2);
             if (it.Id == _selected) PlaceScaleHandle(it, box);
         }
         if (_scaleHandle is not null && (_selected is not { } sid || active.All(a => a.Id != sid))) { Overlay.Children.Remove(_scaleHandle); _scaleHandle = null; }
@@ -385,13 +397,13 @@ public partial class AdvancedEditor
         Panel.SetZIndex(_scaleHandle, 10);
     }
 
-    private (double X, double Y) CenterOf(TimelineItem it) => (it.Props.PosX * Stage.Width, it.Props.PosY * Stage.Height);
+    private (double X, double Y) CenterOf(TimelineItem it) => (it.Props.ValueAt(KeyProp.PosX, _t - it.Start) * Stage.Width, it.Props.ValueAt(KeyProp.PosY, _t - it.Start) * Stage.Height);
 
     private void ScaleHandle_Down(object sender, MouseButtonEventArgs e)
     {
         if (_selected is not { } id || _h.Current.Find(id) is not { } it) return;
         var c = CenterOf(it); var m = e.GetPosition(Overlay);
-        _scalingId = id; _scaleStart = it.Props.Scale; _scaleStartDistance = Math.Max(8, Math.Sqrt((m.X - c.X) * (m.X - c.X) + (m.Y - c.Y) * (m.Y - c.Y)));
+        _scalingId = id; _scaleStart = it.Props.ValueAt(KeyProp.Scale, _t - it.Start); _scaleStartDistance = Math.Max(8, Math.Sqrt((m.X - c.X) * (m.X - c.X) + (m.Y - c.Y) * (m.Y - c.Y)));
         Overlay.CaptureMouse();
         e.Handled = true;
     }
@@ -403,7 +415,7 @@ public partial class AdvancedEditor
     {
         if (sender is not Border { Tag: Guid id } || _h.Current.Find(id) is not { } item) return;
         Tl.SetSelection(new[] { id }); _selected = id; ShowProps(); RenderOverlay();
-        _layerId = id; _layerFrom = e.GetPosition(Overlay); _layerStart = (item.Props.PosX, item.Props.PosY);
+        _layerId = id; _layerFrom = e.GetPosition(Overlay); _layerStart = (item.Props.ValueAt(KeyProp.PosX, _t - item.Start), item.Props.ValueAt(KeyProp.PosY, _t - item.Start));
         Overlay.CaptureMouse();
         e.Handled = true;
     }
@@ -415,7 +427,7 @@ public partial class AdvancedEditor
             var c = CenterOf(sit); var m = e.GetPosition(Overlay);
             double dist = Math.Sqrt((m.X - c.X) * (m.X - c.X) + (m.Y - c.Y) * (m.Y - c.Y));
             double scale = Math.Clamp(_scaleStart * dist / _scaleStartDistance, 0.05, 6);
-            _h.Apply(_h.Current.SetProps(sid, o => o with { Scale = scale }), "scale:" + sid);
+            _h.Apply(WithValue(_h.Current, sid, KeyProp.Scale, scale), "scale:" + sid + (_h.Current.Find(sid)!.Props.HasKeys(KeyProp.Scale) ? ":" + Math.Round(_t, 2) : ""));
             Tl.Project = _h.Current;
             UndoButton.IsEnabled = _h.CanUndo; RedoButton.IsEnabled = _h.CanRedo;
             RenderOverlay(); ShowProps();
@@ -424,7 +436,7 @@ public partial class AdvancedEditor
         if (_layerId is not { } id || e.LeftButton != MouseButtonState.Pressed) return;
         var pos = e.GetPosition(Overlay);
         double nx = Math.Clamp(_layerStart.X + (pos.X - _layerFrom.X) / Stage.Width, 0, 1), ny = Math.Clamp(_layerStart.Y + (pos.Y - _layerFrom.Y) / Stage.Height, 0, 1);
-        _h.Apply(_h.Current.SetProps(id, o => o with { PosX = nx, PosY = ny }), "place:" + id);
+        _h.Apply(WithValue(WithValue(_h.Current, id, KeyProp.PosX, nx), id, KeyProp.PosY, ny), "place:" + id + (_h.Current.Find(id)!.Props.HasKeys(KeyProp.PosX) || _h.Current.Find(id)!.Props.HasKeys(KeyProp.PosY) ? ":" + Math.Round(_t, 2) : ""));
         Tl.Project = _h.Current;
         UndoButton.IsEnabled = _h.CanUndo; RedoButton.IsEnabled = _h.CanRedo;
         RenderOverlay(); ShowProps();

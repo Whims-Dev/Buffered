@@ -12,7 +12,88 @@ public enum TrackKind { Video, Audio, Text }
 /// Volume is a multiplier (1 = as recorded); Opacity is 0 to 1; Speed is 1 for normal.
 /// </summary>
 public sealed record ItemProps(double Opacity = 1, double Volume = 1, double FadeIn = 0, double FadeOut = 0, double Speed = 1, string? Text = null,
-    double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF");
+    double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null)
+{
+    /// <summary>The value a property has when it is not animated (the slider's value).</summary>
+    public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, _ => Scale };
+
+    public bool HasKeys(KeyProp p) => Keys?.Any(k => k.Prop == p && k.Frames.Count > 0) == true;
+
+    public ImmutableList<Keyframe> FramesOf(KeyProp p) => Keys?.FirstOrDefault(k => k.Prop == p)?.Frames ?? ImmutableList<Keyframe>.Empty;
+
+    /// <summary>
+    /// The value of a property <paramref name="t"/> seconds into the item: the slider's value if it is not animated, otherwise a straight line between the two keyframes around that moment
+    /// (before the first keyframe it has the first one's value, after the last the last one's).
+    /// </summary>
+    public double ValueAt(KeyProp p, double t)
+    {
+        var f = FramesOf(p);
+        if (f.Count == 0) return Base(p);
+        if (t <= f[0].Time) return f[0].Value;
+        if (t >= f[^1].Time) return f[^1].Value;
+        int i = 1; while (f[i].Time < t) i++;
+        double span = f[i].Time - f[i - 1].Time;
+        return span <= 1e-9 ? f[i].Value : f[i - 1].Value + (f[i].Value - f[i - 1].Value) * (t - f[i - 1].Time) / span;
+    }
+
+    public static double Limit(KeyProp p, double v) => p switch
+    {
+        KeyProp.Opacity => Math.Clamp(v, 0, 1), KeyProp.Volume => Math.Clamp(v, 0, 2), KeyProp.PosX or KeyProp.PosY => Math.Clamp(v, 0, 1), _ => Math.Clamp(v, 0.05, 6),
+    };
+
+    private ItemProps WithFrames(KeyProp p, ImmutableList<Keyframe> frames)
+    {
+        var others = (Keys ?? ImmutableList<KeyTrack>.Empty).Where(k => k.Prop != p);
+        var all = frames.Count == 0 ? others : others.Append(new KeyTrack(p, frames));
+        var list = all.OrderBy(k => k.Prop).ToImmutableList();
+        return this with { Keys = list.IsEmpty ? null : list };
+    }
+
+    /// <summary>Puts a keyframe in (or changes the one that is already within a few hundredths of a second of that time).</summary>
+    public ItemProps WithKey(KeyProp p, double time, double value)
+    {
+        var f = FramesOf(p);
+        int near = f.FindIndex(k => Math.Abs(k.Time - time) < 0.03);
+        var key = new Keyframe(near >= 0 ? f[near].Time : time, Limit(p, value));
+        return WithFrames(p, (near >= 0 ? f.SetItem(near, key) : f.Add(key)).Sort((a, b) => a.Time.CompareTo(b.Time)));
+    }
+
+    public ItemProps WithoutKey(KeyProp p, double time)
+    {
+        var f = FramesOf(p);
+        int near = f.FindIndex(k => Math.Abs(k.Time - time) < 0.03);
+        return near < 0 ? this : WithFrames(p, f.RemoveAt(near));
+    }
+
+    public ItemProps ClearKeys(KeyProp p) => WithFrames(p, ImmutableList<Keyframe>.Empty);
+
+    /// <summary>The keyframes of the part of an item that starts <paramref name="from"/> seconds in and is <paramref name="length"/> seconds long, with times counted from its new start.</summary>
+    public ItemProps Slice(double from, double length)
+    {
+        if (Keys is null) return this;
+        var result = this;
+        foreach (var k in Keys)
+        {
+            var kept = k.Frames.Where(f => f.Time > from + 0.001 && f.Time < from + length - 0.001).Select(f => f with { Time = f.Time - from }).ToList();
+            kept.Insert(0, new Keyframe(0, ValueAt(k.Prop, from)));                         // the animation's value at the new start, so the part looks the same as it did
+            kept.Add(new Keyframe(length, ValueAt(k.Prop, from + length)));                  // and at the new end
+            result = result.WithFrames(k.Prop, kept.ToImmutableList());
+        }
+        return result;
+    }
+
+    /// <summary>The same keyframes with every time moved by <paramref name="delta"/> seconds.</summary>
+    public ItemProps ShiftKeys(double delta) =>
+        Keys is null ? this : this with { Keys = Keys.Select(k => k with { Frames = k.Frames.Select(f => f with { Time = f.Time + delta }).ToImmutableList() }).ToImmutableList() };
+}
+
+/// <summary>A property that can change over the time an item is on the timeline.</summary>
+public enum KeyProp { Opacity, Volume, PosX, PosY, Scale }
+
+/// <summary>A value a property has at a moment, counted in seconds from the start of the item.</summary>
+public sealed record Keyframe(double Time, double Value);
+
+public sealed record KeyTrack(KeyProp Prop, ImmutableList<Keyframe> Frames);
 
 /// <summary>One piece on the timeline: a stretch of a source file (<see cref="SourceIn"/> to <see cref="SourceOut"/>, in the source's own seconds) placed at <see cref="Start"/>.</summary>
 public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double SourceIn, double SourceOut, double Start, ItemProps Props, Guid? LinkId = null, string? Label = null, int Stream = 0)
@@ -28,8 +109,18 @@ public sealed record Track(Guid Id, TrackKind Kind, string Name, ImmutableList<T
 /// The whole edit as an unchanging value: every operation returns a new project, which is what makes undo and redo trivial (<see cref="EditHistory"/>) and the logic easy to test.
 /// Times are in seconds on the timeline. Nothing here knows about the screen.
 /// </summary>
-public sealed record Project(ImmutableList<Track> Tracks)
+public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>? Markers = null)
 {
+    /// <summary>Times the user marked on the ruler (to come back to, and to snap to).</summary>
+    [JsonIgnore] public ImmutableList<double> Marks => Markers ?? ImmutableList<double>.Empty;
+
+    /// <summary>Puts a marker at a time, or takes the one that is already there (within a twentieth of a second) away.</summary>
+    public Project ToggleMarker(double time)
+    {
+        int near = Marks.FindIndex(m => Math.Abs(m - time) < 0.05);
+        return this with { Markers = near >= 0 ? Marks.RemoveAt(near) : Marks.Add(time).Sort() };
+    }
+
     public const double MinLength = 0.05;   // nothing shorter than this is left behind by a cut
 
     [JsonIgnore] public double Duration => Tracks.SelectMany(t => t.Items).Select(i => i.End).DefaultIfEmpty(0).Max();
@@ -87,8 +178,9 @@ public sealed record Project(ImmutableList<Track> Tracks)
             int tr = p.TrackOf(part.Id);
             if (tr < 0 || p.Tracks[tr].Locked) continue;
             double cut = part.SourceIn + (time - part.Start) * part.Props.Speed;
-            var left = part with { SourceOut = cut, Props = part.Props with { FadeOut = 0 } };
-            var right = part with { Id = Guid.NewGuid(), SourceIn = cut, Start = time, Props = part.Props with { FadeIn = 0 }, LinkId = rightLink };
+            double leftLen = time - part.Start, rightLen = part.End - time;
+            var left = part with { SourceOut = cut, Props = part.Props.Slice(0, leftLen) with { FadeOut = 0 } };
+            var right = part with { Id = Guid.NewGuid(), SourceIn = cut, Start = time, Props = part.Props.Slice(leftLen, rightLen) with { FadeIn = 0 }, LinkId = rightLink };
             p = p.Replace(tr, l => l.Remove(part).Add(left).Add(right));
         }
         return p;
@@ -111,7 +203,7 @@ public sealed record Project(ImmutableList<Track> Tracks)
             double floor = others.Where(o => o.End <= item.Start + 1e-9).Select(o => o.End).DefaultIfEmpty(0).Max();
             floor = Math.Max(floor, item.Start - item.SourceIn / speed);                 // cannot reveal footage before the source begins
             double t = Math.Clamp(time, floor, item.End - MinLength);
-            result = item with { Start = t, SourceIn = item.SourceIn + (t - item.Start) * speed };
+            result = item with { Start = t, SourceIn = item.SourceIn + (t - item.Start) * speed, Props = item.Props.ShiftKeys(-(t - item.Start)) };   // the animation stays with the picture
         }
         else
         {
@@ -233,6 +325,56 @@ public sealed record Project(ImmutableList<Track> Tracks)
         return p;
     }
 
+    /// <summary>The track number each of these items is on, with the item (for copying).</summary>
+    public List<(int Track, TimelineItem Item)> Pick(IEnumerable<Guid> ids) =>
+        ids.Select(id => (Track: TrackOf(id), Item: Find(id))).Where(x => x.Track >= 0 && x.Item is not null).Select(x => (Track: x.Track, Item: x.Item!)).OrderBy(x => x.Item.Start).ToList();
+
+    /// <summary>
+    /// Puts copies of items in, the first one starting at <paramref name="at"/> and the others the same distance after it as before. Each goes on its own lane if it fits there,
+    /// otherwise on another lane of the same kind, otherwise on a new lane. The copies have new ids and are not linked to anything. Returns the new project and the ids of the copies.
+    /// </summary>
+    public (Project Project, List<Guid> NewIds) Paste(IReadOnlyList<(int Track, TimelineItem Item)> items, double at)
+    {
+        var p = this; var ids = new List<Guid>();
+        if (items.Count == 0) return (p, ids);
+        double first = items.Min(x => x.Item.Start);
+        foreach (var (track, item) in items)
+        {
+            var copy = item with { Id = Guid.NewGuid(), Start = Math.Max(0, at + (item.Start - first)), LinkId = null };
+            var kind = item.Kind switch { ItemKind.Audio => TrackKind.Audio, ItemKind.Text => TrackKind.Text, _ => TrackKind.Video };
+            var order = new List<int>();
+            if (track >= 0 && track < p.Tracks.Count && p.Tracks[track].Kind == kind) order.Add(track);
+            order.AddRange(Enumerable.Range(0, p.Tracks.Count).Where(i => p.Tracks[i].Kind == kind));
+            Project? placed = null;
+            foreach (var i in order.Distinct()) { placed = p.Add(i, copy); if (placed is not null) break; }
+            if (placed is null)
+            {
+                var grown = p.AddTrack(kind, kind == TrackKind.Audio ? "Sound" : kind == TrackKind.Text ? "Text" : "Video");
+                placed = grown.Add(kind == TrackKind.Audio ? grown.Tracks.Count - 1 : 0, copy);
+            }
+            if (placed is null) continue;
+            p = placed; ids.Add(copy.Id);
+        }
+        return (p, ids);
+    }
+
+    /// <summary>Sets a keyframe of a property at a timeline time (it must be inside the item), so the property starts to change over time.</summary>
+    public Project SetKey(Guid id, KeyProp prop, double timelineTime, double value)
+    {
+        var item = Find(id);
+        if (item is null) return this;
+        double t = Math.Clamp(timelineTime - item.Start, 0, item.Length);
+        return SetProps(id, o => o.WithKey(prop, t, value));
+    }
+
+    public Project RemoveKey(Guid id, KeyProp prop, double timelineTime)
+    {
+        var item = Find(id);
+        return item is null ? this : SetProps(id, o => o.WithoutKey(prop, timelineTime - item.Start));
+    }
+
+    public Project ClearKeys(Guid id, KeyProp prop) => SetProps(id, o => o.ClearKeys(prop));
+
     /// <summary>Frees an item from the ones it was linked with (a picture and its sound), without moving anything.</summary>
     public Project Unlink(Guid id)
     {
@@ -248,7 +390,7 @@ public sealed record Project(ImmutableList<Track> Tracks)
     public double? SnapPoint(double time, double within, IReadOnlyCollection<Guid> ignore)
     {
         double? best = null;
-        foreach (var t in Items.Where(i => !ignore.Contains(i.Id)).SelectMany(i => new[] { i.Start, i.End }).Append(0))
+        foreach (var t in Items.Where(i => !ignore.Contains(i.Id)).SelectMany(i => new[] { i.Start, i.End }).Concat(Marks).Append(0))
             if (Math.Abs(t - time) <= within && (best is null || Math.Abs(t - time) < Math.Abs(best.Value - time))) best = t;
         return best;
     }

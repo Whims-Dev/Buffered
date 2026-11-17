@@ -28,7 +28,7 @@ public partial class AdvancedEditor
         try
         {
             using var job = Job("Checking the video tools…");
-            var missing = await MissingFiltersAsync();
+            var missing = await MissingFiltersAsync(ExportGraph.ExtraFiltersFor(project));
             if (missing.Count > 0)
             {
                 if (Dialogs is not null)
@@ -55,7 +55,7 @@ public partial class AdvancedEditor
 
     private static string SafeName(string s) => string.Concat(s.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? ' ' : c)).Trim();
 
-    private static async Task<List<string>> MissingFiltersAsync()
+    private static async Task<List<string>> MissingFiltersAsync(IEnumerable<string> extra)
     {
         try
         {
@@ -64,15 +64,18 @@ public partial class AdvancedEditor
             string text = await p.StandardOutput.ReadToEndAsync();
             await p.WaitForExitAsync();
             var have = text.Split('\n').Select(l => l.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)).Where(w => w.Length > 1).Select(w => w[1]).ToHashSet();
-            return ExportGraph.RequiredFilters.Where(f => !have.Contains(f)).ToList();
+            return ExportGraph.RequiredFilters.Concat(extra).Where(f => !have.Contains(f)).ToList();
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { return ExportGraph.RequiredFilters.ToList(); }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { return ExportGraph.RequiredFilters.Concat(extra).ToList(); }
     }
 
     private async Task RunExportAsync(Project project, ExportChoice choice)
     {
         double aspect = _aspect;
-        int h = choice.Height, w = Math.Max(2, (int)Math.Round(h * aspect / 2) * 2);
+        // the size names the shorter side: "1080p" is 1920 x 1080 for a wide video, 1080 x 1920 for a tall one, 1080 x 1080 for a square one
+        int w, h;
+        if (aspect >= 1) { h = choice.Height; w = Math.Max(2, (int)Math.Round(h * aspect / 2) * 2); }
+        else { w = choice.Height; h = Math.Max(2, (int)Math.Round(w / aspect / 2) * 2); }
         var options = new ExportOptions(w, h, choice.Fps, choice.Cq, choice.Crf, true);
 
         string work = Path.Combine(Path.GetTempPath(), "Buffered", "export_" + Guid.NewGuid().ToString("N"));
@@ -81,11 +84,17 @@ public partial class AdvancedEditor
         foreach (var it in project.Items.Where(i => i.Kind == ItemKind.Text))
         {
             string png = Path.Combine(work, it.Id.ToString("N") + ".png");
-            RenderTextLayer(it, w, h, png);
+            RenderTextLayer(it, h, png);
             layers[it.Id] = png;
         }
 
-        var plan = ExportGraph.Build(project, options, i => _mixer.PathOf($"{i.Source}#{i.Stream}"), i => layers.TryGetValue(i.Id, out var p) ? p : null, _ => null);
+        // a moving picture (GIF) is drawn out as one picture for every frame of the export, so it plays and loops exactly as in the preview
+        var sequences = new Dictionary<Guid, string>();
+        foreach (var it in project.Items.Where(i => i.Kind == ItemKind.Image && GifAnimation.IsGif(i.Source)))
+            if (GifFor(it.Source) is { } gif) sequences[it.Id] = WriteGifSequence(it, gif, choice.Fps, work);
+
+        var plan = ExportGraph.Build(project, options, i => _mixer.PathOf($"{i.Source}#{i.Stream}"), i => layers.TryGetValue(i.Id, out var p) ? p : null, _ => null,
+            i => sequences.TryGetValue(i.Id, out var s) ? s : null);
         string temp = Path.Combine(Path.GetDirectoryName(choice.Path)!, "." + Path.GetFileNameWithoutExtension(choice.Path) + ".part.mp4");
 
         var progress = new ExportProgress(Window.GetWindow(this));
@@ -143,24 +152,51 @@ public partial class AdvancedEditor
         catch (Exception ex) { return (false, ex.Message); }
     }
 
-    /// <summary>Draws a text item as a transparent picture of the whole frame, the same way the preview draws it.</summary>
-    private void RenderTextLayer(TimelineItem it, int W, int H, string path)
+    private static string WriteGifSequence(TimelineItem it, GifAnimation gif, int fps, string work)
+    {
+        string dir = Path.Combine(work, "gif_" + it.Id.ToString("N"));
+        Directory.CreateDirectory(dir);
+        var written = new Dictionary<int, string>();   // each picture of the GIF is written once, and copied for the frames that show it
+        int frames = (int)Math.Ceiling(it.Length * fps) + 1;
+        for (int k = 0; k < frames; k++)
+        {
+            int index = gif.IndexAt(k / (double)fps);
+            string file = Path.Combine(dir, $"{k + 1:00000}.png");
+            if (written.TryGetValue(index, out var first)) File.Copy(first, file, overwrite: true);
+            else
+            {
+                var enc = new PngBitmapEncoder(); enc.Frames.Add(BitmapFrame.Create(gif.Frames[index]));
+                using (var fs = File.Create(file)) enc.Save(fs);
+                written[index] = file;
+            }
+        }
+        return Path.Combine(dir, "%05d.png");
+    }
+
+    /// <summary>
+    /// Draws a text item as a tight transparent picture of its words (with room for the shadow), at the biggest size the item ever has.
+    /// The export scales it down and puts it where each moment needs, so the words can move and grow smoothly.
+    /// </summary>
+    private void RenderTextLayer(TimelineItem it, int H, string path)
     {
         double k = H / Math.Max(1, Stage.Height);
+        double biggest = ExportGraph.TextRenderScale(it.Props);
         var tb = new TextBlock
         {
             Text = it.Props.Text ?? "", TextAlignment = TextAlignment.Center, FontWeight = FontWeights.Bold,
-            FontSize = Math.Max(4, H * it.Props.TextSize * it.Props.Scale),
+            FontSize = Math.Max(4, H * it.Props.TextSize * biggest),
             Effect = new DropShadowEffect { BlurRadius = 6 * k, ShadowDepth = 1 * k, Opacity = 0.75 },
         };
         try { tb.Foreground = (Brush)new BrushConverter().ConvertFromString(it.Props.Color)!; } catch (FormatException) { tb.Foreground = Brushes.White; }
         tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var canvas = new Canvas { Width = W, Height = H, Background = Brushes.Transparent };
-        Canvas.SetLeft(tb, it.Props.PosX * W - tb.DesiredSize.Width / 2);
-        Canvas.SetTop(tb, it.Props.PosY * H - tb.DesiredSize.Height / 2);
+        int pad = (int)Math.Ceiling(10 * k * Math.Max(1, biggest));
+        int W = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Width) + 2 * pad), Hh = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Height) + 2 * pad);
+        W += W % 2; Hh += Hh % 2;
+        var canvas = new Canvas { Width = W, Height = Hh, Background = Brushes.Transparent };
+        Canvas.SetLeft(tb, (W - tb.DesiredSize.Width) / 2); Canvas.SetTop(tb, (Hh - tb.DesiredSize.Height) / 2);
         canvas.Children.Add(tb);
-        canvas.Measure(new Size(W, H)); canvas.Arrange(new Rect(0, 0, W, H)); canvas.UpdateLayout();
-        var bmp = new RenderTargetBitmap(W, H, 96, 96, PixelFormats.Pbgra32);
+        canvas.Measure(new Size(W, Hh)); canvas.Arrange(new Rect(0, 0, W, Hh)); canvas.UpdateLayout();
+        var bmp = new RenderTargetBitmap(W, Hh, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(canvas);
         var enc = new PngBitmapEncoder(); enc.Frames.Add(BitmapFrame.Create(bmp));
         using var fs = File.Create(path); enc.Save(fs);

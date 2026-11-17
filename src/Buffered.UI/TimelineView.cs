@@ -78,7 +78,11 @@ public sealed class TimelineView : FrameworkElement
     public void RemovePending(Guid id) { _pending.RemoveAll(p => p.Id == id); InvalidateVisual(); }
     public int LaneForEntry(MediaEntry entry, int hovered) => LaneFor(entry, hovered);
 
-    private enum Drag { None, Seek, Move, TrimLeft, TrimRight, Pan, Box, FadeIn, FadeOut }
+    /// <summary>Whether dragging sticks to edges and the playhead (turn it off for fine placement).</summary>
+    public bool SnapEnabled { get; set; } = true;
+    private double Within => SnapEnabled ? SnapPixels / _pps : -1;
+
+    private enum Drag { None, Seek, Move, TrimLeft, TrimRight, Pan, Box, FadeIn, FadeOut, Volume }
     private Point _boxFrom, _boxTo; private bool _boxAdd; private HashSet<Guid> _boxBase = new();
     private List<Guid> _dragIds = new();
     private Drag _drag;
@@ -135,6 +139,15 @@ public sealed class TimelineView : FrameworkElement
             dc.DrawText(Fmt(Clock(t), 10.5 * F, dim), new Point(x + 3, 4 * F));
         }
 
+        foreach (var m in _project.Marks)
+        {
+            double mx = X(m);
+            if (mx < HeaderWidth || mx > w) continue;
+            var mk = Frozen(Color.FromRgb(0xE6, 0xD3, 0x70));
+            dc.DrawGeometry(mk, null, Geometry.Parse($"M {mx - 5 * F:0.#},{RulerHeight - 11 * F:0.#} L {mx + 5 * F:0.#},{RulerHeight - 11 * F:0.#} L {mx:0.#},{RulerHeight - 1:0.#} Z"));
+            dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(70, 0xE6, 0xD3, 0x70)), 1), new Point(mx, RulerHeight), new Point(mx, h));
+        }
+
         // lanes (clipped so that scrolling them never draws over the ruler)
         _scrollY = Math.Clamp(_scrollY, 0, MaxScrollY);
         dc.PushClip(new RectangleGeometry(new Rect(0, RulerHeight, w, Math.Max(0, h - RulerHeight))));
@@ -179,6 +192,26 @@ public sealed class TimelineView : FrameworkElement
                         nt.MaxTextWidth = Math.Max(1, r.Width - 12); nt.MaxLineCount = 1; nt.Trimming = TextTrimming.CharacterEllipsis;
                         dc.DrawText(nt, new Point(r.X + 6, top + 19 * F));
                     }
+                }
+                if (it.Props.Keys is { Count: > 0 })   // keyframes: a small diamond for each moment something is animated
+                {
+                    bool chosen = _sel.Contains(it.Id);
+                    var diamond = new SolidColorBrush(chosen ? Color.FromRgb(0xE6, 0xD3, 0x70) : Color.FromArgb(150, 230, 211, 112));
+                    foreach (double kt in it.Props.Keys.SelectMany(k => k.Frames).Select(f => Math.Round(f.Time, 3)).Distinct())
+                    {
+                        double kx = X(it.Start + kt), ky = top + LaneHeight - 6 * F, d = (chosen ? 4.5 : 3.5) * F;
+                        if (kx < Math.Max(x0, HeaderWidth) - 1 || kx > Math.Min(x1, w) + 1) continue;
+                        dc.DrawGeometry(diamond, new Pen(new SolidColorBrush(Color.FromArgb(200, 0, 0, 0)), 1), Geometry.Parse($"M {kx - d:0.#},{ky:0.#} L {kx:0.#},{ky - d:0.#} L {kx + d:0.#},{ky:0.#} L {kx:0.#},{ky + d:0.#} Z"));
+                    }
+                }
+                if (it.Id == _selected && !tr.Locked && it.Kind == ItemKind.Audio && r.Width > 60 * F)   // volume: a line across the item with a knob to drag up and down
+                {
+                    var (kx, ky) = VolumeKnobPos(it, top);
+                    var lineBrush = new SolidColorBrush(Color.FromArgb(150, 255, 255, 255));
+                    dc.DrawLine(new Pen(lineBrush, 1) { DashStyle = DashStyles.Dash }, new Point(Math.Max(x0, HeaderWidth), ky), new Point(Math.Min(x1, w), ky));
+                    dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)), new Pen(new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)), 1), new Point(kx, ky), 5 * F, 5 * F);
+                    var vt = Fmt($"{it.Props.ValueAt(KeyProp.Volume, _playhead - it.Start) * 100:0}%", 10 * F, Brushes.White);
+                    dc.DrawText(vt, new Point(kx + 9 * F, ky - vt.Height / 2));
                 }
                 if (it.Id == _selected && !tr.Locked)   // fade handles: drag them along the top edge
                 {
@@ -389,7 +422,7 @@ public sealed class TimelineView : FrameworkElement
             _dropEntry = entry; _dropLength = entry.Seconds;
             _dropLane = LaneFor(entry, LaneAt(p.Y));
             double t = Math.Max(0, T(Math.Max(HeaderWidth, p.X)));
-            double within = SnapPixels / _pps;
+            double within = Within;
             _snapLine = null;
             double best = within;
             foreach (var edge in new[] { 0.0, _dropLength })   // the start or the end of what is coming in may stick to an edge or the playhead
@@ -426,6 +459,37 @@ public sealed class TimelineView : FrameworkElement
     // ---- mouse
 
     private double? _snapLine;
+
+    /// <summary>Where the volume knob of an audio item sits: in the middle of the item, higher for louder (the line at 100% is a bit above the middle).</summary>
+    private (double X, double Y) VolumeKnobPos(TimelineItem it, double laneTop)
+    {
+        double span = LaneHeight - 10 * F;
+        double y = laneTop + LaneHeight - 5 * F - Math.Clamp(it.Props.ValueAt(KeyProp.Volume, _playhead - it.Start), 0, 2) / 2 * span;
+        double x = Math.Clamp((X(it.Start) + X(it.End)) / 2, Math.Max(X(it.Start), HeaderWidth) + 20 * F, Math.Min(X(it.End), ActualWidth) - 20 * F);
+        return (x, y);
+    }
+
+    /// <summary>The time of the keyframe diamond of the selected item under the mouse, if any.</summary>
+    private double? KeyDiamondAt(Point p)
+    {
+        if (_selected is not { } id || _project.Find(id) is not { Props.Keys: { Count: > 0 } } it) return null;
+        int lane = _project.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));
+        if (lane < 0) return null;
+        double ky = LaneTop(lane) + LaneHeight - 6 * F;
+        if (Math.Abs(p.Y - ky) > 7 * F) return null;
+        foreach (double kt in it.Props.Keys.SelectMany(k => k.Frames).Select(f => f.Time).Distinct())
+            if (Math.Abs(X(it.Start + kt) - p.X) <= 6 * F) return it.Start + kt;
+        return null;
+    }
+
+    private bool VolumeKnobAt(Point p)
+    {
+        if (_selected is not { } id || _project.Find(id) is not { Kind: ItemKind.Audio } it) return false;
+        int lane = _project.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));
+        if (lane < 0 || _project.Tracks[lane].Locked || X(it.End) - Math.Max(X(it.Start), HeaderWidth) <= 60 * F) return false;
+        var (kx, ky) = VolumeKnobPos(it, LaneTop(lane));
+        return Math.Abs(p.X - kx) <= 8 * F && Math.Abs(p.Y - ky) <= 8 * F;
+    }
 
     /// <summary>The fade handle of the selected item under the mouse, if any.</summary>
     private Drag? FadeHandleAt(Point p)
@@ -470,7 +534,20 @@ public sealed class TimelineView : FrameworkElement
             else if (lane >= 0 && lane < _project.Tracks.Count && p.X > HeaderWidth - 60 * F) LaneFlagToggled?.Invoke(lane, LaneFlag.Mute);
             return;
         }
-        if (p.Y < RulerHeight) { _drag = Drag.Seek; CaptureMouse(); SeekRequested?.Invoke(Math.Max(0, T(p.X))); return; }
+        if (p.Y < RulerHeight)
+        {
+            _drag = Drag.Seek; CaptureMouse();
+            double at = Math.Max(0, T(p.X));
+            if (_project.Marks.FirstOrDefault(m => Math.Abs(X(m) - p.X) < 7 * F, double.NaN) is { } mk && !double.IsNaN(mk)) at = mk;   // a click on a marker goes exactly there
+            SeekRequested?.Invoke(at);
+            return;
+        }
+        if (KeyDiamondAt(p) is { } keyTime) { SeekRequested?.Invoke(keyTime); return; }
+        if (VolumeKnobAt(p) && _selected is { } vid)
+        {
+            _dragBase = _project; _dragId = vid; _dragChanged = false; _drag = Drag.Volume; CaptureMouse();
+            return;
+        }
 
         if (FadeHandleAt(p) is { } fadeHandle && _selected is { } fid)
         {
@@ -500,8 +577,8 @@ public sealed class TimelineView : FrameworkElement
         if (Razor || Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
         {
             double t = T(p.X);
-            if (_project.SnapPoint(t, SnapPixels / _pps) is { } sn) t = sn;
-            if (Math.Abs(t - _playhead) < SnapPixels / _pps) t = _playhead;
+            if (_project.SnapPoint(t, Within) is { } sn) t = sn;
+            if (Math.Abs(t - _playhead) < Within) t = _playhead;
             var cut = _project.Split(id, t);
             if (!ReferenceEquals(cut, _project)) { _project = cut; InvalidateVisual(); CutMade?.Invoke(cut); }
             return;
@@ -523,6 +600,7 @@ public sealed class TimelineView : FrameworkElement
         {
             var hit = ItemAt(p);
             if (FadeHandleAt(p) is not null) { Cursor = Cursors.Hand; return; }
+            if (VolumeKnobAt(p)) { Cursor = Cursors.SizeNS; return; }
             Cursor = hit is { part: not 0 } ? Cursors.SizeWE : Razor && hit is not null ? Cursors.Cross : null;
             return;
         }
@@ -542,10 +620,19 @@ public sealed class TimelineView : FrameworkElement
 
         var b = _dragBase!;
         var item = b.Find(_dragId)!;
-        double within = SnapPixels / _pps;
+        double within = Within;
         _snapLine = null;
         Project next;
-        if (_drag is Drag.FadeIn or Drag.FadeOut)
+        if (_drag == Drag.Volume)
+        {
+            int lane = b.Tracks.FindIndex(t => t.Items.Any(i => i.Id == _dragId));
+            double span = LaneHeight - 10 * F;
+            double v = Math.Clamp((LaneTop(lane) + LaneHeight - 5 * F - p.Y) / span * 2, 0, 2);
+            if (Math.Abs(v - 1) < 0.05) v = 1;   // sticks at the original volume
+            next = item.Props.HasKeys(KeyProp.Volume) ? b.SetKey(_dragId, KeyProp.Volume, _playhead, v)   // an animated volume gets a keyframe at the playhead
+                                                      : b.SetProps(_dragId, o => o with { Volume = v });
+        }
+        else if (_drag is Drag.FadeIn or Drag.FadeOut)
         {
             double t = T(p.X);
             double len = Math.Clamp(_drag == Drag.FadeIn ? t - item.Start : item.End - t, 0, item.Length);

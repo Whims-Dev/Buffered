@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
@@ -15,6 +16,8 @@ namespace Buffered.UI;
 /// </summary>
 public partial class AdvancedEditor : UserControl
 {
+    private const string Hint = "Space plays · S cuts · Delete removes · C razor · Ctrl+D duplicates · M marks · L loops";
+
     public event Action? CloseRequested;
 
     private EditHistory _h = new(Project.Empty());
@@ -34,7 +37,7 @@ public partial class AdvancedEditor : UserControl
     private readonly List<string> _thumbDirs = new();
     private readonly DispatcherTimer _frameTimer = new() { Interval = TimeSpan.FromMilliseconds(130) };
     private double _lastExpected;
-    private bool _deferSync;
+    private bool _deferSync, _loop;
 
     public AdvancedEditor()
     {
@@ -52,6 +55,7 @@ public partial class AdvancedEditor : UserControl
         Tl.SelectionChanged += id => { _selected = id; ShowProps(); RenderOverlay(); };
         InitMedia();
         InitProject();
+        InitMore();
         Tl.Changing += p => { Tl.Project = p; PushLanesOf(p); Sync(false); };
         Tl.Committed += p => { _h.Apply(p); AfterEdit(); };
         Tl.CutMade += p => { _h.Apply(p); AfterEdit(); };
@@ -105,7 +109,7 @@ public partial class AdvancedEditor : UserControl
             p = p.Add(2, new TimelineItem(Guid.NewGuid(), ItemKind.Audio, clip.Path, 0, dur, 0, new ItemProps(), link, $"{clip.Label} - Sound"))!;
 
         _h = new EditHistory(p);
-        _aspectSet = false; FillMedia();
+        _aspectSet = false; ShowAspect(); FillMedia();
         _mixer = new TimelineMixer(); _ = _mixer.PrepareAsync();
         _t = 0; _selected = null; Tl.Selected = null;
         Tl.Project = p; Tl.Playhead = 0;
@@ -148,7 +152,7 @@ public partial class AdvancedEditor : UserControl
             return;
         }
         for (int i = 0; i < files.Count; i++) { _pcmFiles.Add(files[i]); _mixer.AddSource($"{stems ?? clip}#{i}", files[i]); _ = DrawWaveAsync($"{stems ?? clip}#{i}", files[i]); }
-        StatusText.Text = "Space plays · S cuts · Delete removes · C razor · Ctrl+Z undoes · Ctrl+wheel zooms";
+        StatusText.Text = Hint;
         PushLanes();
         if (_playing) _mixer.Play(_t);
     }
@@ -199,7 +203,7 @@ public partial class AdvancedEditor : UserControl
     {
         var lanes = proj.Tracks.Where(t => !t.Muted)
             .SelectMany(t => t.Items).Where(i => i.Kind == ItemKind.Audio)
-            .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Props.FadeIn, i.Props.FadeOut)).ToArray();
+            .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Props.FadeIn, i.Props.FadeOut, i.Props.HasKeys(KeyProp.Volume) ? i.Props.FramesOf(KeyProp.Volume).ToArray() : null)).ToArray();
         _mixer.SetLanes(lanes);
     }
 
@@ -254,14 +258,25 @@ public partial class AdvancedEditor : UserControl
         }
         _t = _mixer.IsPlaying && !_mixer.Failed ? _mixer.Position : _baseT + _clock.Elapsed.TotalSeconds;
         double total = _h.Current.Duration;
-        if (_t >= total) { _t = total; TogglePlay(); Tl.Playhead = _t; ShowClock(); return; }
+        if (_t >= total)
+        {
+            if (_loop && total > 0.1) { SetTime(0, true); Tl.ScrollTime = 0; return; }   // starts over and goes on playing
+            _t = total; TogglePlay(); Tl.Playhead = _t; ShowClock(); return;
+        }
         Tl.Playhead = _t;
         Tl.KeepVisible(_t);
         ShowClock();
         Sync(false);
     }
 
-    private void ShowClock() => ClockText.Text = $"{Fmt(_t)} / {Fmt(_h.Current.Duration)}";
+    private void ShowClock()
+    {
+        ClockTextUpdate();
+        // an animated property moves as the playhead does: keep the sliders showing its value
+        if (_selected is { } sid && _h.Current.Find(sid) is { Props.Keys: { Count: > 0 } }) ShowProps();
+    }
+
+    private void ClockTextUpdate() => ClockText.Text = $"{Fmt(_t)} / {Fmt(_h.Current.Duration)}";
     private static string Fmt(double t) { int m = (int)(t / 60); return $"{m}:{t - m * 60:00.0}"; }
 
     /// <summary>Makes the picture match the playhead: finds the video item under it (the topmost track wins), loads its source, keeps it in step, and applies its opacity, fades and volume.</summary>
@@ -309,8 +324,30 @@ public partial class AdvancedEditor : UserControl
         double into = t - active.Start, left = active.End - t, env = 1;
         if (active.Props.FadeIn > 0 && into < active.Props.FadeIn) env = Math.Min(env, into / active.Props.FadeIn);
         if (active.Props.FadeOut > 0 && left < active.Props.FadeOut) env = Math.Min(env, left / active.Props.FadeOut);
-        Video.Opacity = Math.Clamp(active.Props.Opacity * env, 0, 1);
+        Video.Opacity = Math.Clamp(active.Props.ValueAt(KeyProp.Opacity, into) * env, 0, 1);
         Video.IsMuted = true;   // all sound comes from the sound items, through the mixer
+        ApplyVideoTransform(active);
+    }
+
+    /// <summary>Puts the picture where the item's Scale and position say (zoomed in, moved), clipped by the frame.</summary>
+    private void ApplyVideoTransform(TimelineItem active)
+    {
+        double at = _t - active.Start;
+        double s = active.Props.ValueAt(KeyProp.Scale, at), px = active.Props.ValueAt(KeyProp.PosX, at), py = active.Props.ValueAt(KeyProp.PosY, at);
+        Video.RenderTransformOrigin = new Point(0.5, 0.5);
+        Video.RenderTransform = Math.Abs(s - 1) < 0.001 && Math.Abs(px - 0.5) < 0.001 && Math.Abs(py - 0.5) < 0.001
+            ? Transform.Identity
+            : new TransformGroup { Children = { new ScaleTransform(s, s), new TranslateTransform((px - 0.5) * Stage.Width, (py - 0.5) * Stage.Height) } };
+    }
+
+    private void FitVideo_Click(object sender, RoutedEventArgs e) => ApplyToSelection(o => o with { Scale = 1, PosX = 0.5, PosY = 0.5 }, "fit");
+
+    /// <summary>Zooms the selected video until it covers the whole frame.</summary>
+    private void FillVideo_Click(object sender, RoutedEventArgs e)
+    {
+        double va = Video.NaturalVideoWidth > 0 && Video.NaturalVideoHeight > 0 ? (double)Video.NaturalVideoWidth / Video.NaturalVideoHeight : _aspect;
+        double fill = Math.Max(_aspect / va, va / _aspect);
+        ApplyToSelection(o => o with { Scale = fill, PosX = 0.5, PosY = 0.5 }, "fill");
     }
 
     /// <summary>While playing, holds the playhead and the sound until the picture has reached <paramref name="where"/> (it may take a moment in a long clip).</summary>
@@ -326,14 +363,14 @@ public partial class AdvancedEditor : UserControl
     {
         _waiting = false;
         _baseT = _t; _clock.Restart(); _mixer.Play(_t);
-        StatusText.Text = "Space plays · S cuts · Delete removes · C razor · Ctrl+Z undoes · Ctrl+wheel zooms";
+        StatusText.Text = Hint;
     }
 
     private void Video_Opened(object sender, RoutedEventArgs e)
     {
         try
         {
-            if (!_aspectSet && Video.NaturalVideoWidth > 0 && Video.NaturalVideoHeight > 0) { _aspect = (double)Video.NaturalVideoWidth / Video.NaturalVideoHeight; _aspectSet = true; FitStage(); }
+            if (!_aspectSet && Video.NaturalVideoWidth > 0 && Video.NaturalVideoHeight > 0) { _aspect = (double)Video.NaturalVideoWidth / Video.NaturalVideoHeight; _aspectSet = true; FitStage(); ShowAspect(); }
             Video.Position = TimeSpan.FromSeconds(_pendingPos);
             Video.Play(); _videoPlaying = true;
             if (!_playing) { _frameTimer.Stop(); _frameTimer.Interval = TimeSpan.FromMilliseconds(500); _frameTimer.Start(); }   // a file just opened needs longer than a jump inside one before its first picture is shown
@@ -387,6 +424,7 @@ public partial class AdvancedEditor : UserControl
     private void DeleteSelected(bool ripple)
     {
         if (Tl.Selection.Count == 0) { StatusText.Text = "Click an item to select it first"; return; }
+        ripple ^= RippleToggle.IsChecked == true;   // with Ripple on, Delete closes the gap and Shift+Delete leaves it
         _h.Apply(_h.Current.DeleteMany(Tl.Selection.ToList(), ripple));
         Tl.Selected = null; _selected = null;
         AfterEdit();
@@ -492,18 +530,21 @@ public partial class AdvancedEditor : UserControl
         Vis(it.Kind == ItemKind.Audio, VolumeRow, VolumeSlider);
         Vis(timed, SpeedRow, SpeedSlider);
         Vis(it.Kind == ItemKind.Text, WordsPanel);
-        Vis(overlay, PlacePanel);
+        Vis(overlay || it.Kind == ItemKind.Video, PlacePanel);
+        Vis(it.Kind == ItemKind.Video, FitRow);
         _uiBusy = true;
         try
         {
             double maxFade = Math.Max(0.1, Math.Min(10, it.Length));
             FadeInSlider.Maximum = FadeOutSlider.Maximum = maxFade;
-            OpacitySlider.Value = it.Props.Opacity * 100;
-            VolumeSlider.Value = it.Props.Volume * 100;
+            double at = _t - it.Start;
+            OpacitySlider.Value = it.Props.ValueAt(KeyProp.Opacity, at) * 100;
+            VolumeSlider.Value = it.Props.ValueAt(KeyProp.Volume, at) * 100;
             FadeInSlider.Value = it.Props.FadeIn; FadeOutSlider.Value = it.Props.FadeOut;
             SpeedSlider.Value = it.Props.Speed;
-            SizeSlider.Value = it.Props.TextSize * 100; ScaleSlider.Value = it.Props.Scale * 100;
-            PosXSlider.Value = it.Props.PosX * 100; PosYSlider.Value = it.Props.PosY * 100;
+            SizeSlider.Value = it.Props.TextSize * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
+            PosXSlider.Value = it.Props.ValueAt(KeyProp.PosX, at) * 100; PosYSlider.Value = it.Props.ValueAt(KeyProp.PosY, at) * 100;
+            UpdateKeyButtons(it, at);
             if (TextInput.Text != (it.Props.Text ?? "") && !TextInput.IsKeyboardFocusWithin) TextInput.Text = it.Props.Text ?? "";
             ShowPropValues();
         }
@@ -528,8 +569,14 @@ public partial class AdvancedEditor : UserControl
         if (_uiBusy || _selected is not { } primary) return;
         ShowPropValues();
         var next = _h.Current;
+        var animated = KeyPropOf(sender);
         foreach (var id in Tl.Selection.DefaultIfEmpty(primary))   // only the slider that moved is applied, so items that differ in the others keep their own values
         {
+            if (animated is { } kp && next.Find(id) is { } target && target.Props.HasKeys(kp))
+            {
+                next = next.SetKey(id, kp, _t, ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
+                continue;
+            }
             next = next.SetProps(id, o =>
                 sender == OpacitySlider ? o with { Opacity = OpacitySlider.Value / 100 } :
                 sender == VolumeSlider ? o with { Volume = VolumeSlider.Value / 100 } :
@@ -568,6 +615,11 @@ public partial class AdvancedEditor : UserControl
             case Key.S when !ctrl: SplitAtPlayhead(); break;
             case Key.C when !ctrl: RazorButton.IsChecked = RazorButton.IsChecked != true; Razor_Click(sender, e); break;
             case Key.S when ctrl: SaveProject(shift); break;
+            case Key.M when !ctrl: _h.Apply(_h.Current.ToggleMarker(_t)); AfterEdit(); break;
+            case Key.L when !ctrl: _loop = !_loop; StatusText.Text = _loop ? "Looping: playback starts over at the end (L turns it off)" : "Looping off"; break;
+            case Key.C when ctrl: CopySelection(); break;
+            case Key.V when ctrl: PasteAtPlayhead(); break;
+            case Key.D when ctrl: Duplicate(); break;
             case Key.E when ctrl: _ = ExportAsync(); break;
             case Key.Delete: DeleteSelected(shift); break;
             case Key.A when ctrl: Tl.SetSelection(_h.Current.Items.Select(i => i.Id)); _selected = Tl.Selected; ShowProps(); break;

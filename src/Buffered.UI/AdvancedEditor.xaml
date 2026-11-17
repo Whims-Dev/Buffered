@@ -3,6 +3,23 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Buffered.UI"
              Focusable="True" FocusVisualStyle="{x:Null}">
+    <UserControl.Resources>
+        <!-- line icons drawn as paths; they take the colour of the button's text, so they dim when the button is disabled -->
+        <Style x:Key="ToolIcon" TargetType="Path">
+            <Setter Property="Width" Value="18"/><Setter Property="Height" Value="18"/><Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="StrokeThickness" Value="1.8"/><Setter Property="StrokeLineJoin" Value="Round"/><Setter Property="StrokeStartLineCap" Value="Round"/><Setter Property="StrokeEndLineCap" Value="Round"/>
+            <Setter Property="Stroke" Value="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource AncestorType=ContentPresenter}}"/>
+        </Style>
+        <!-- the small diamond beside an animatable slider -->
+        <Style x:Key="KeyDiamond" TargetType="Button">
+            <Setter Property="Width" Value="24"/><Setter Property="Height" Value="24"/><Setter Property="MinWidth" Value="0"/><Setter Property="MinHeight" Value="0"/><Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="FontSize" Value="15"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="6,-3,0,0"/><Setter Property="Content" Value="&#x25C7;"/>
+        </Style>
+        <Style x:Key="ToolGlyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource IconFont}"/><Setter Property="FontSize" Value="16"/><Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
     <Grid Margin="16,12,16,14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -20,12 +37,15 @@
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="BackButton" Content="Back" Height="32" Click="Back_Click" ToolTip="Back to the clip (Esc)"/>
-                <TextBlock x:Name="TitleText" Margin="14,0,0,0" MaxWidth="260" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock x:Name="TitleText" Margin="14,0,0,0" MaxWidth="150" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"/>
                 <TextBlock x:Name="DirtyDot" Text="&#x25CF;" Margin="8,1,0,0" VerticalAlignment="Center" Foreground="#E6D370" Visibility="Collapsed" ToolTip="Unsaved changes"/>
             </StackPanel>
-            <TextBlock x:Name="StatusText" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis"
-                       Text="Space plays · S cuts · Delete removes · C razor · Ctrl+Z undoes · Ctrl+wheel zooms"/>
+            <TextBlock x:Name="StatusText" Grid.Column="1" Margin="18,0,18,0" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis"
+                       Text="Space plays · S cuts · Delete removes · C razor · Ctrl+D duplicates · M marks · L loops"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="UndoButton" Height="32" Width="40" Padding="0" Margin="0,0,4,0" Click="Undo_Click" ToolTip="Undo (Ctrl+Z)" AutomationProperties.Name="Undo"><Path Style="{StaticResource ToolIcon}" Data="M8,4 L3,9 L8,14 M3,9 H14 C18.5,9 21,12 21,15 C21,18 18.5,21 14,21 H9"/></Button>
+                <Button x:Name="RedoButton" Height="32" Width="40" Padding="0" Margin="0,0,14,0" Click="Redo_Click" ToolTip="Redo (Ctrl+Y)" AutomationProperties.Name="Redo"><Path Style="{StaticResource ToolIcon}" Data="M16,4 L21,9 L16,14 M21,9 H10 C5.5,9 3,12 3,15 C3,18 5.5,21 10,21 H15"/></Button>
+                <ComboBox x:Name="AspectBox" Width="168" Height="32" Margin="0,0,8,0" SelectionChanged="Aspect_Changed" ToolTip="The shape of the video: wide, tall (phone), square..."/>
                 <Button x:Name="ProjectButton" Content="Project" Height="32" Margin="0,0,8,0" Click="Project_Click" ToolTip="Save, open and manage edits (Ctrl+S saves)"/>
                 <Button x:Name="ExportButton" Content="Export" Height="32" MinWidth="86" Style="{StaticResource PrimaryButton}" Click="Export_Click" ToolTip="Save this edit as a video (Ctrl+E)"/>
             </StackPanel>
@@ -81,7 +101,7 @@
             </Border>
 
             <Border Grid.Column="1" Background="Black" CornerRadius="6" ClipToBounds="True" SizeChanged="Stage_SizeChanged" x:Name="StageHost">
-                <Grid x:Name="Stage" HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Height="225">
+                <Grid x:Name="Stage" HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Height="225" ClipToBounds="True">
                     <MediaElement x:Name="Video" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform"
                                   MediaOpened="Video_Opened" MediaFailed="Video_Failed"/>
                     <TextBlock x:Name="EmptyText" Text="Nothing here at the playhead" Foreground="#99FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
@@ -94,9 +114,9 @@
                     <TextBlock x:Name="PropsTitle" Text="Nothing selected" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
                     <TextBlock x:Name="PropsHint" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" Text="Click an item on the timeline to change its opacity, volume and fades."/>
                     <StackPanel x:Name="PropsBody" Visibility="Collapsed" Margin="0,10,0,0">
-                        <DockPanel x:Name="OpacityRow" Margin="0,0,0,10"><TextBlock x:Name="OpacityValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Opacity"/></DockPanel>
+                        <DockPanel x:Name="OpacityRow" Margin="0,0,0,10"><Button x:Name="KeyOpacity" Tag="Opacity" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="OpacityValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Opacity"/></DockPanel>
                         <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                        <DockPanel x:Name="VolumeRow" Margin="0,0,0,10"><TextBlock x:Name="VolumeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Volume"/></DockPanel>
+                        <DockPanel x:Name="VolumeRow" Margin="0,0,0,10"><Button x:Name="KeyVolume" Tag="Volume" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="VolumeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Volume"/></DockPanel>
                         <Slider x:Name="VolumeSlider" Minimum="0" Maximum="200" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel Margin="0,0,0,10"><TextBlock x:Name="FadeInValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade in"/></DockPanel>
                         <Slider x:Name="FadeInSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
@@ -113,11 +133,15 @@
                             <WrapPanel x:Name="Swatches" Margin="0,0,0,10"/>
                         </StackPanel>
                         <StackPanel x:Name="PlacePanel">
-                            <DockPanel Margin="0,0,0,10"><TextBlock x:Name="ScaleValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Scale"/></DockPanel>
-                            <Slider x:Name="ScaleSlider" Minimum="5" Maximum="300" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                            <DockPanel Margin="0,0,0,10"><TextBlock x:Name="PosXValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Across"/></DockPanel>
+                            <StackPanel x:Name="FitRow" Orientation="Horizontal" Margin="0,0,0,12">
+                                <Button Content="Fit in the frame" Height="30" Margin="0,0,6,0" Click="FitVideo_Click" ToolTip="Show the whole picture, with bars if its shape differs"/>
+                                <Button Content="Fill the frame" Height="30" Click="FillVideo_Click" ToolTip="Zoom in until the picture covers the whole frame (the edges are cut off)"/>
+                            </StackPanel>
+                            <DockPanel Margin="0,0,0,10"><Button x:Name="KeyScale" Tag="Scale" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="ScaleValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Scale"/></DockPanel>
+                            <Slider x:Name="ScaleSlider" Minimum="5" Maximum="400" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
+                            <DockPanel Margin="0,0,0,10"><Button x:Name="KeyPosX" Tag="PosX" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="PosXValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Across"/></DockPanel>
                             <Slider x:Name="PosXSlider" Minimum="0" Maximum="100" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                            <DockPanel Margin="0,0,0,10"><TextBlock x:Name="PosYValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Down"/></DockPanel>
+                            <DockPanel Margin="0,0,0,10"><Button x:Name="KeyPosY" Tag="PosY" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="PosYValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Down"/></DockPanel>
                             <Slider x:Name="PosYSlider" Minimum="0" Maximum="100" Margin="0,-6,0,0" ValueChanged="Prop_Changed"/>
                         </StackPanel>
                     </StackPanel>
@@ -127,6 +151,11 @@
 
         <!-- Transport and editing tools sit right above the timeline they work on -->
         <Grid Grid.Row="2" Margin="0,10,0,8">
+            <Grid.Resources>
+                <!-- compact buttons, so the playback, tools and view controls fit side by side in a narrow window -->
+                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="9,0"/><Setter Property="MinWidth" Value="0"/></Style>
+                <Style TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}"><Setter Property="Padding" Value="9,0"/><Setter Property="MinWidth" Value="0"/></Style>
+            </Grid.Resources>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -134,25 +163,25 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button x:Name="PlayButton" Content="Play" Height="32" MinWidth="80" Click="Play_Click" ToolTip="Play or pause (Space)"/>
-            <TextBlock x:Name="ClockText" Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" FontFamily="Consolas" Text="0:00.0 / 0:00.0"/>
+            <Button x:Name="PlayButton" Content="Play" Height="32" MinWidth="64" Click="Play_Click" ToolTip="Play or pause (Space)"/>
+            <TextBlock x:Name="ClockText" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Consolas" FontSize="12" Text="0:00.0 / 0:00.0"/>
             <StackPanel x:Name="JobPanel" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0" Visibility="Collapsed">
                 <ProgressBar IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"/>
                 <TextBlock x:Name="JobText" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12" MaxWidth="260" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
             <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Center">
-                <Button x:Name="UndoButton" Content="Undo" Height="32" Margin="0,0,4,0" Click="Undo_Click" ToolTip="Undo (Ctrl+Z)"/>
-                <Button x:Name="RedoButton" Content="Redo" Height="32" Margin="0,0,14,0" Click="Redo_Click" ToolTip="Redo (Ctrl+Y)"/>
-                <ToggleButton x:Name="RazorButton" Content="Razor" Height="32" Margin="0,0,4,0" Click="Razor_Click" ToolTip="Click an item to cut it there (C). Alt+click does the same."/>
-                <Button Content="Split" Height="32" Margin="0,0,4,0" Click="Split_Click" ToolTip="Cut the selected items at the playhead (S)"/>
-                <Button Content="Delete" Height="32" Margin="0,0,4,0" Click="Delete_Click" ToolTip="Delete the selected items (Delete). Shift+Delete closes the gap."/>
-                <Button x:Name="UnlinkButton" Content="Unlink" Height="32" Margin="0,0,14,0" Click="Unlink_Click" ToolTip="Let the picture and its sound be moved on their own"/>
-                <Button x:Name="TransitionButton" Content="Transition" Height="32" Margin="0,0,4,0" Click="Transition_Click" ToolTip="Fade pictures and sound through black where two items meet (select one of them first)"/>
-                <Button Content="Add lane" Height="32" Click="AddLane_Click" ToolTip="Add a picture lane or a sound lane. Right-click an empty lane's name to remove it."/>
+                <ToggleButton x:Name="RazorButton" Height="32" Width="40" Margin="0,0,4,0" Click="Razor_Click" ToolTip="Razor: click an item to cut it there (C). Alt+click does the same." AutomationProperties.Name="Razor"><Path Style="{StaticResource ToolIcon}" Data="M9,6 A3,3 0 1 1 3,6 A3,3 0 1 1 9,6 M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 M8.2,8 L21,19 M8.2,16 L21,5"/></ToggleButton>
+                <Button Height="32" Width="40" Margin="0,0,4,0" Click="Split_Click" ToolTip="Split: cut the selected items at the playhead (S)" AutomationProperties.Name="Split"><Path Style="{StaticResource ToolIcon}" Data="M12,2 V22 M4,7 H20 V17 H4 Z"/></Button>
+                <Button Height="32" Width="40" Margin="0,0,4,0" Click="Delete_Click" ToolTip="Delete the selected items (Delete). Shift+Delete closes the gap." AutomationProperties.Name="Delete"><TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE74D;"/></Button>
+                <Button x:Name="UnlinkButton" Height="32" Width="40" Margin="0,0,14,0" Click="Unlink_Click" ToolTip="Unlink: let the picture and its sound be moved on their own" AutomationProperties.Name="Unlink"><Grid><TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE71B;"/><Path Style="{StaticResource ToolIcon}" Data="M3,21 L21,3"/></Grid></Button>
+                <Button x:Name="TransitionButton" Height="32" Width="40" Margin="0,0,4,0" Click="Transition_Click" ToolTip="Transition: fade pictures and sound through black where two items meet (select one of them first)" AutomationProperties.Name="Transition"><Path Style="{StaticResource ToolIcon}" Data="M3,5 L11,12 L3,19 Z M21,5 L13,12 L21,19 Z"/></Button>
+                <Button Height="32" Width="40" Click="AddLane_Click" ToolTip="Add lane: a picture lane or a sound lane. Right-click an empty lane's name to remove it." AutomationProperties.Name="Add lane"><Path Style="{StaticResource ToolIcon}" Data="M3,6 H21 M3,12 H12 M3,18 H21 M18,9 V15 M15,12 H21"/></Button>
             </StackPanel>
             <StackPanel Grid.Column="4" Orientation="Horizontal">
-                <Button Content="Fit" Height="32" Margin="0,0,8,0" Click="Fit_Click" ToolTip="Zoom to fit everything"/>
-                <Slider x:Name="ZoomSlider" Width="110" Minimum="0" Maximum="1" VerticalAlignment="Center" ValueChanged="Zoom_Changed" ToolTip="Zoom (Ctrl + mouse wheel on the timeline)"/>
+                <ToggleButton x:Name="SnapToggle" IsChecked="True" Height="32" Width="40" Margin="0,0,4,0" Click="Snap_Click" ToolTip="Snap: stick to edges, markers and the playhead while dragging" AutomationProperties.Name="Snap"><Path Style="{StaticResource ToolIcon}" Data="M6,3 V11 A6,6 0 0 0 18,11 V3 M6,8 H10 M14,8 H18"/></ToggleButton>
+                <ToggleButton x:Name="RippleToggle" Height="32" Width="40" Margin="0,0,8,0" ToolTip="Ripple: Delete closes the gap it leaves (Shift+Delete does the opposite)" AutomationProperties.Name="Ripple"><Path Style="{StaticResource ToolIcon}" Data="M2,12 H7 M22,12 H17 M9,6 L12,12 L9,18 M15,6 L12,12 L15,18"/></ToggleButton>
+                <Button Height="32" Width="40" Margin="0,0,8,0" Click="Fit_Click" ToolTip="Fit: zoom to show everything" AutomationProperties.Name="Fit"><Path Style="{StaticResource ToolIcon}" Data="M4,9 V4 H9 M20,9 V4 H15 M4,15 V20 H9 M20,15 V20 H15"/></Button>
+                <Slider x:Name="ZoomSlider" Width="80" Minimum="0" Maximum="1" VerticalAlignment="Center" ValueChanged="Zoom_Changed" ToolTip="Zoom (Ctrl + mouse wheel on the timeline)"/>
             </StackPanel>
         </Grid>
 

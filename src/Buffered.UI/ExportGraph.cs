@@ -24,9 +24,9 @@ public static class ExportGraph
     /// <param name="pcmFor">The decoded sound file (raw 48 kHz stereo 16-bit) for a sound item, or null if it is not available.</param>
     /// <param name="layerFor">The ready-made full-size picture (PNG) of a text item.</param>
     /// <param name="imageSize">The pixel size of a picture item's file.</param>
-    public static Plan Build(Project p, ExportOptions o, Func<TimelineItem, string?> pcmFor, Func<TimelineItem, string?> layerFor, Func<string, (int W, int H)?> imageSize)
+    /// <param name="sequenceFor">For a moving picture (a GIF) drawn out as numbered pictures by the editor: the pattern of their files (such as "dir\\%05d.png"), one for each frame of the export; null for a still.</param>
+    public static Plan Build(Project p, ExportOptions o, Func<TimelineItem, string?> pcmFor, Func<TimelineItem, string?> layerFor, Func<string, (int W, int H)?> imageSize, Func<TimelineItem, string?>? sequenceFor = null)
     {
-        string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
         double total = Math.Max(0.1, p.Duration);
         var inputs = new List<string> { "-f", "lavfi", "-i", $"color=c=black:s={o.Width}x{o.Height}:r={o.Fps}:d={N(total)}" };
         int index = 1;                                   // input 0 is the black picture
@@ -41,31 +41,37 @@ public static class ExportGraph
                 double len = it.Length;
                 string tag = $"v{layer++}";
                 string fades = Fades(it, len, true);
-                bool alpha = fades.Length > 0 || it.Props.Opacity < 0.999;
-                string post = (fades.Length > 0 ? "," + fades : "") + (it.Props.Opacity < 0.999 ? $",colorchannelmixer=aa={N(it.Props.Opacity)}" : "");
+                bool fadingOpacity = it.Props.HasKeys(KeyProp.Opacity);
+                bool alpha = fades.Length > 0 || fadingOpacity || it.Props.Opacity < 0.999;
+                string post = fades.Length > 0 ? "," + fades : "";
+                if (fadingOpacity) post += OpacityCommands(it, o.Fps, tag);                                           // animated opacity: commands change the filter as the frames go by
+                else if (it.Props.Opacity < 0.999) post += $",colorchannelmixer=aa={N(it.Props.Opacity)}";
+                string x = PositionExpr(it, KeyProp.PosX, o.Width), y = PositionExpr(it, KeyProp.PosY, o.Height);   // where the middle of the picture goes (the keyframe times are on the timeline)
 
                 if (it.Kind == ItemKind.Video)
                 {
                     inputs.AddRange(new[] { "-ss", N(it.SourceIn), "-t", N(it.SourceOut - it.SourceIn), "-i", it.Source });
-                    graph.Append($"[{index}:v]setpts=(PTS-STARTPTS)/{N(it.Props.Speed)},fps={o.Fps},scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease,pad={o.Width}:{o.Height}:(ow-iw)/2:(oh-ih)/2:black");
+                    graph.Append($"[{index}:v]setpts=(PTS-STARTPTS)/{N(it.Props.Speed)},fps={o.Fps},scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease");
+                    graph.Append(ScaleBy(it, "iw", "ih", 1));                                                           // zoomed in or out; what goes past the frame is cut off by the overlay
                     graph.Append(alpha ? ",format=yuva420p" : "").Append(post).Append($",setpts=PTS+{N(it.Start)}/TB[{tag}];");
-                    graph.Append($"[{last}][{tag}]overlay=eof_action=pass:format=auto[o{layer}];");
+                    graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
                 }
                 else if (it.Kind == ItemKind.Image)
                 {
-                    var size = imageSize(it.Source) ?? (o.Width, o.Height);
-                    int w = Math.Max(2, (int)(o.Width * 0.4 * it.Props.Scale) / 2 * 2);
-                    inputs.AddRange(new[] { "-loop", "1", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", it.Source });
-                    graph.Append($"[{index}:v]scale={w}:-2,format=rgba").Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
-                    graph.Append($"[{last}][{tag}]overlay=x={N(it.Props.PosX * o.Width)}-overlay_w/2:y={N(it.Props.PosY * o.Height)}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
+                    if (sequenceFor?.Invoke(it) is { } sequence) inputs.AddRange(new[] { "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", sequence });
+                    else inputs.AddRange(new[] { "-loop", "1", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", it.Source });
+                    // a picture is 40% of the frame's width at scale 1
+                    graph.Append($"[{index}:v]").Append(ScaleBy(it, N(o.Width * 0.4), "-2", 0, firstInChain: true)).Append(",format=rgba").Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
+                    graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
                 }
-                else   // text: a picture of the whole frame, drawn by the editor
+                else   // text: a tight picture of the words, drawn by the editor at its biggest size and scaled down to what each moment needs
                 {
                     string? png = layerFor(it);
                     if (png is null) { layer--; continue; }
                     inputs.AddRange(new[] { "-loop", "1", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", png });
-                    graph.Append($"[{index}:v]format=rgba").Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
-                    graph.Append($"[{last}][{tag}]overlay=eof_action=pass:format=auto[o{layer}];");
+                    double biggest = TextRenderScale(it.Props);
+                    graph.Append($"[{index}:v]format=rgba").Append(ScaleBy(it, "iw", "ih", 1, divideBy: biggest)).Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
+                    graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
                 }
                 last = $"o{layer}";
                 index++;
@@ -85,7 +91,8 @@ public static class ExportGraph
                 string tag = $"a{a++}";
                 var chain = new StringBuilder($"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo");
                 foreach (var t in TempoSteps(it.Props.Speed)) chain.Append($",atempo={N(t)}");
-                if (Math.Abs(it.Props.Volume - 1) > 0.001) chain.Append($",volume={N(it.Props.Volume)}");
+                if (it.Props.HasKeys(KeyProp.Volume)) chain.Append($",volume=volume='{Curve(it.Props.FramesOf(KeyProp.Volume), 0)}':eval=frame");   // animated volume: a line between the keyframes, worked out as the sound goes by
+                else if (Math.Abs(it.Props.Volume - 1) > 0.001) chain.Append($",volume={N(it.Props.Volume)}");
                 if (it.Props.FadeIn > 0.001) chain.Append($",afade=t=in:st=0:d={N(it.Props.FadeIn)}");
                 if (it.Props.FadeOut > 0.001) chain.Append($",afade=t=out:st={N(Math.Max(0, len - it.Props.FadeOut))}:d={N(it.Props.FadeOut)}");
                 long ms = (long)Math.Round(it.Start * 1000);
@@ -101,10 +108,71 @@ public static class ExportGraph
         return new Plan(inputs, graph.ToString(), sounds.Count > 0, total);
     }
 
+    /// <summary>The scale a text item's picture is drawn at: the biggest it ever gets, so it is only ever made smaller (which stays sharp).</summary>
+    public static double TextRenderScale(ItemProps p) => Math.Max(p.Scale, p.HasKeys(KeyProp.Scale) ? p.FramesOf(KeyProp.Scale).Max(f => f.Value) : 0);
+
+    private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// An expression in <c>t</c> (seconds) that follows a line between keyframes: the first value before the first keyframe, the last after the last. The keyframe times
+    /// are counted from <paramref name="offset"/>, so use the item's start for a time on the timeline, or 0 for a time inside the item.
+    /// </summary>
+    public static string Curve(IReadOnlyList<Keyframe> frames, double offset, double scaleValues = 1)
+    {
+        string V(Keyframe k) => N(k.Value * scaleValues);
+        string expr = V(frames[^1]);
+        for (int i = frames.Count - 1; i >= 1; i--)
+        {
+            double t0 = offset + frames[i - 1].Time, t1 = offset + frames[i].Time;
+            string seg = t1 - t0 <= 1e-6 ? V(frames[i]) : $"{V(frames[i - 1])}+({N(frames[i].Value * scaleValues - frames[i - 1].Value * scaleValues)})*(t-{N(t0)})/{N(t1 - t0)}";
+            expr = $"if(lt(t,{N(t1)}),{seg},{expr})";
+        }
+        return $"if(lt(t,{N(offset + frames[0].Time)}),{V(frames[0])},{expr})";
+    }
+
+    /// <summary>Where (in pixels) the middle of a picture is: a number, or an expression in the timeline time when the position is animated.</summary>
+    private static string PositionExpr(TimelineItem it, KeyProp prop, int size) =>
+        it.Props.HasKeys(prop) ? $"'{Curve(it.Props.FramesOf(prop), it.Start, size)}'" : N(it.Props.Base(prop) * size);
+
+    /// <summary>
+    /// The filter that sizes a picture by the item's Scale: nothing when the scale is 1, a fixed size when it is not animated, a size worked out for every frame when it is.
+    /// <paramref name="baseW"/> and <paramref name="baseH"/> are the expressions for the unscaled size ("iw" and "ih" for a picture that is already the right size).
+    /// </summary>
+    private static string ScaleBy(TimelineItem it, string baseW, string baseH, double unitScale, bool firstInChain = false, double divideBy = 1)
+    {
+        string lead = firstInChain ? "" : ",";
+        bool animated = it.Props.HasKeys(KeyProp.Scale);
+        double s = it.Props.Scale / divideBy;
+        if (!animated && Math.Abs(s - unitScale) < 0.001 && !firstInChain) return "";
+        if (animated)
+        {
+            string expr = Curve(it.Props.FramesOf(KeyProp.Scale), 0, 1 / divideBy);
+            string w = baseW == "-2" ? "-2" : $"'trunc(({baseW})*({expr})/2)*2'", h = baseH == "-2" ? "-2" : $"'trunc(({baseH})*({expr})/2)*2'";
+            return $"{lead}scale=w={w}:h={h}:eval=frame";
+        }
+        string ws = baseW == "-2" ? "-2" : $"trunc(({baseW})*{N(s)}/2)*2", hs = baseH == "-2" ? "-2" : $"trunc(({baseH})*{N(s)}/2)*2";
+        return $"{lead}scale={ws}:{hs}";
+    }
+
+    /// <summary>
+    /// Animated opacity: a filter that is told a new opacity for every frame (or every few frames for a long item) by a list of commands, named so the commands find it.
+    /// The commands are timed from the start of the item.
+    /// </summary>
+    private static string OpacityCommands(TimelineItem it, int fps, string tag)
+    {
+        double step = Math.Max(1.0 / fps, it.Length / 700);
+        var cmds = new StringBuilder();
+        for (double t = 0; t <= it.Length + 1e-6; t += step)
+            cmds.Append($"{N(t)} colorchannelmixer@op{tag} aa {N(Math.Clamp(it.Props.ValueAt(KeyProp.Opacity, t), 0, 1))};");
+        return $",sendcmd=c='{cmds}',colorchannelmixer@op{tag}=aa={N(it.Props.ValueAt(KeyProp.Opacity, 0))}";
+    }
+
+    /// <summary>Filters beyond the usual ones that this particular edit needs (the video tools must have them).</summary>
+    public static IEnumerable<string> ExtraFiltersFor(Project p) => p.Items.Any(i => i.Kind != ItemKind.Audio && i.Props.HasKeys(KeyProp.Opacity)) ? new[] { "sendcmd" } : Array.Empty<string>();
+
     /// <summary>The fade in and fade out of an item on its alpha channel (picture items).</summary>
     private static string Fades(TimelineItem it, double len, bool alpha)
     {
-        string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
         var parts = new List<string>();
         if (it.Props.FadeIn > 0.001) parts.Add($"fade=t=in:st=0:d={N(it.Props.FadeIn)}:alpha=1");
         if (it.Props.FadeOut > 0.001) parts.Add($"fade=t=out:st={N(Math.Max(0, len - it.Props.FadeOut))}:d={N(it.Props.FadeOut)}:alpha=1");
