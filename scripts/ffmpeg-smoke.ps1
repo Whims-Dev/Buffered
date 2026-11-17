@@ -54,7 +54,7 @@ Step 'corrected copy (aac re-encode)' $ff @('-hide_banner','-loglevel','error','
 # Saving a clip: raw video and raw sound in, mixed and separate tracks out, a companion file.
 Step 'raw video out' $ff @('-hide_banner','-loglevel','error','-y','-i',$src,'-an','-c:v','copy','-f','h264',"$w\raw.h264") "$w\raw.h264"
 Step 'raw sound out' $ff @('-hide_banner','-loglevel','error','-y','-i',$src,'-vn','-ac','2','-ar','48000','-f','s16le',"$w\a.pcm") "$w\a.pcm"
-$graph = '[1:a]volume=3.5dB[mx0];[2:a]volume=-6dB,asplit=2[mx1][st1];[mx0]asplit=2[mx0a][st0];[mx0a]aformat=channel_layouts=stereo[ms0];[mx1]aformat=channel_layouts=stereo[ms1];[ms0][ms1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95,atrim=start_sample=1024,asetpts=N/SR/TB[mix];[st0]atrim=start_sample=1024,asetpts=N/SR/TB[spt0]'
+$graph = '[1:a]volume=3.5dB[mx0];[2:a]volume=-6dB,asplit=2[mx1][st1];[mx0]asplit=2[mx0a][st0];[mx0a]aformat=channel_layouts=stereo[ms0];[mx1]aformat=channel_layouts=stereo[ms1];[ms0][ms1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95,atrim=start_sample=1024,asetpts=N/SR/TB[mix]'
 Step 'save: video, mixed sound, companion file' $ff @('-hide_banner','-loglevel','error','-y','-f','h264','-framerate','60','-i',"$w\raw.h264",'-f','s16le','-ar','48000','-ac','2','-i',"$w\a.pcm",'-f','s16le','-ar','48000','-ac','2','-i',"$w\a.pcm",'-filter_complex',$graph,'-map','0:v','-map','[mix]','-c:v','copy','-c:a','aac','-b:a','160k','-movflags','+faststart',"$w\saved.mp4",'-map','[st0]','-map','[st1]','-vn','-c:a','aac','-b:a','128k','-metadata:s:a:0','title=Game','-f','matroska',"$w\stems.mka") "$w\stems.mka"
 
 # The editor's trim and new volumes.
