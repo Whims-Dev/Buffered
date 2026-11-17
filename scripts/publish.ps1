@@ -25,12 +25,15 @@ if ($FfmpegDir) {
     # ffmpeg builds are GPL: ship the license text and say where the source is.
     $lic = Join-Path (Split-Path $FfmpegDir -Parent) 'LICENSE.txt'
     if (Test-Path $lic) { Copy-Item $lic (Join-Path $out 'ffmpeg-LICENSE.txt') }
+    $info = Join-Path (Split-Path $FfmpegDir -Parent) 'BUILD-INFO.txt'
+    if (Test-Path $info) { Copy-Item $info (Join-Path $out 'ffmpeg-BUILD-INFO.txt') }
     @"
 Buffered is MIT licensed (see the project's LICENSE).
 
 The tools folder contains ffmpeg and ffprobe (with the DLLs they need), separate programs from the FFmpeg project (https://ffmpeg.org),
-built by BtbN (https://github.com/BtbN/FFmpeg-Builds) under the GNU GPL. Their license is in ffmpeg-LICENSE.txt and
-their source code is available from those two sites. Buffered only runs them as separate programs.
+built from the FFmpeg source (https://ffmpeg.org), together with the x264 encoder (https://www.videolan.org/developers/x264.html), by Buffered's own
+build (.github/workflows/ffmpeg.yml in the Buffered repository; ffmpeg-BUILD-INFO.txt gives the versions) under the GNU GPL. The license is in
+ffmpeg-LICENSE.txt and the source code is available from those sites. Buffered only runs them as separate programs.
 "@ | Set-Content (Join-Path $out 'THIRD-PARTY-NOTICES.txt') -Encoding utf8
 }
 

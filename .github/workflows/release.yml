@@ -20,17 +20,17 @@ jobs:
 
       - name: Download ffmpeg
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FFMPEG_RELEASE: ffmpeg-slim-1    # the slim build made by the "ffmpeg" workflow; change this when that is rebuilt and published again
         run: |
-          $base = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest'
-          $name = 'ffmpeg-master-latest-win64-gpl-shared.zip'   # the shared build: one set of codec files instead of two full copies, about 60 MB smaller
-          Invoke-WebRequest "$base/$name" -OutFile $name
-          Invoke-WebRequest "$base/checksums.sha256" -OutFile checksums.sha256
-          $expected = ((Get-Content checksums.sha256 | Where-Object { $_ -match [regex]::Escape($name) }) -split '\s+')[0]
-          $actual = (Get-FileHash $name -Algorithm SHA256).Hash
-          if ($expected -ne $actual) { throw "ffmpeg checksum mismatch: $expected vs $actual" }
-          Expand-Archive $name -DestinationPath ffmpeg
-          $dir = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
-          "FFMPEG_DIR=$dir\bin" | Out-File $env:GITHUB_ENV -Append
+          gh release download $env:FFMPEG_RELEASE --pattern ffmpeg-slim-win64.zip --repo $env:GITHUB_REPOSITORY
+          $digest = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:FFMPEG_RELEASE" --jq '.assets[] | select(.name=="ffmpeg-slim-win64.zip") | .digest'
+          $expected = ("$digest" -replace '^sha256:', '').Trim().ToLower()
+          $actual = (Get-FileHash ffmpeg-slim-win64.zip -Algorithm SHA256).Hash.ToLower()
+          if (-not $expected -or $expected -ne $actual) { throw "ffmpeg checksum missing or wrong: '$expected' vs '$actual'" }
+          Expand-Archive ffmpeg-slim-win64.zip -DestinationPath ffmpeg
+          "FFMPEG_DIR=$PWDfmpegfmpeg-slim-win64in" | Out-File $env:GITHUB_ENV -Append
 
       - name: Build the zip
         shell: pwsh
