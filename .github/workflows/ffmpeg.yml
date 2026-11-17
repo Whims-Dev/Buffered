@@ -54,9 +54,9 @@ jobs:
             --enable-gpl --disable-autodetect --disable-doc --disable-debug --disable-ffplay \
             --disable-everything \
             --enable-libx264 --enable-ffnvcodec --enable-nvenc \
-            --enable-decoder=h264,aac,pcm_s16le,wrapped_avframe \
+            --enable-decoder=h264,hevc,vp9,aac,mp3,mp3float,opus,flac,pcm_s16le,wrapped_avframe \
             --enable-encoder=libx264,h264_nvenc,aac,mjpeg,pcm_s16le \
-            --enable-parser=h264,aac,hevc \
+            --enable-parser=h264,aac,hevc,vp9,opus,mpegaudio,flac \
             --enable-demuxer=mov,matroska,h264,pcm_s16le \
             --enable-muxer=mp4,matroska,mjpeg,image2,pcm_s16le,h264,null \
             --enable-protocol=file,pipe \
