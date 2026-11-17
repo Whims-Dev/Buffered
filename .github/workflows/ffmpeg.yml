@@ -57,8 +57,8 @@ jobs:
             --enable-decoder=h264,aac,pcm_s16le,wrapped_avframe \
             --enable-encoder=libx264,h264_nvenc,aac,mjpeg,pcm_s16le \
             --enable-parser=h264,aac,hevc \
-            --enable-demuxer=mov,matroska,h264,s16le \
-            --enable-muxer=mp4,matroska,mjpeg,image2,s16le,h264,null \
+            --enable-demuxer=mov,matroska,h264,pcm_s16le \
+            --enable-muxer=mp4,matroska,mjpeg,image2,pcm_s16le,h264,null \
             --enable-protocol=file,pipe \
             --enable-bsf=h264_mp4toannexb,aac_adtstoasc,extract_extradata,null \
             --enable-indev=lavfi \
