@@ -21,12 +21,17 @@ public sealed class TimelineView : FrameworkElement
     public double HeaderPixels => HeaderWidth;
     private double RulerHeight => 26 * F;
     /// <summary>Lanes share the height when there is room, and are never thinner than a readable minimum (then the lanes scroll).</summary>
-    private double LaneHeight => 40 * F;
+    private double LaneBase => 40 * F;
+    public const double MinLaneScale = 0.55, MaxLaneScale = 4;
+
+    /// <summary>How tall one lane is (each lane can be dragged taller or shorter).</summary>
+    private double LaneH(int lane) => lane >= 0 && lane < _project.Tracks.Count ? LaneBase * Math.Clamp(_project.Tracks[lane].HeightScale, MinLaneScale, MaxLaneScale) : LaneBase;
+    private double LanesTotal => Enumerable.Range(0, _project.Tracks.Count).Sum(LaneH);
 
     /// <summary>The height that shows every lane plus room for two more, so the timeline card can be only as tall as it needs to be.</summary>
-    public double DesiredHeight => RulerHeight + (_project.Tracks.Count + 2) * LaneHeight + 14;
+    public double DesiredHeight => RulerHeight + LanesTotal + 2 * LaneBase + 14;
     private double _scrollY;
-    private double MaxScrollY => Math.Max(0, _project.Tracks.Count * LaneHeight - (ActualHeight - RulerHeight));
+    private double MaxScrollY => Math.Max(0, LanesTotal - (ActualHeight - RulerHeight));
 
     private Project _project = Project.Empty();
     public Project Project { get => _project; set { _project = value; InvalidateVisual(); } }
@@ -82,7 +87,8 @@ public sealed class TimelineView : FrameworkElement
     public bool SnapEnabled { get; set; } = true;
     private double Within => SnapEnabled ? SnapPixels / _pps : -1;
 
-    private enum Drag { None, Seek, Move, TrimLeft, TrimRight, Pan, Box, FadeIn, FadeOut, Volume }
+    private enum Drag { None, Seek, Move, TrimLeft, TrimRight, Pan, Box, FadeIn, FadeOut, Volume, ResizeLane }
+    private int _resizeLane; private double _resizeFromY, _resizeFromScale;
     private Point _boxFrom, _boxTo; private bool _boxAdd; private HashSet<Guid> _boxBase = new();
     private List<Guid> _dragIds = new();
     private Drag _drag;
@@ -102,8 +108,14 @@ public sealed class TimelineView : FrameworkElement
 
     private double X(double t) => HeaderWidth + (t - _scrollT) * _pps;
     private double T(double x) => _scrollT + (x - HeaderWidth) / _pps;
-    private double LaneTop(int track) => RulerHeight + track * LaneHeight - _scrollY;
-    private int LaneAt(double y) => y < RulerHeight ? -1 : (int)((y - RulerHeight + _scrollY) / LaneHeight);
+    private double LaneTop(int track) { double y = RulerHeight - _scrollY; for (int i = 0; i < track; i++) y += LaneH(i); return y; }
+    private int LaneAt(double y)
+    {
+        if (y < RulerHeight) return -1;
+        double top = RulerHeight - _scrollY;
+        for (int i = 0; i < _project.Tracks.Count; i++) { top += LaneH(i); if (y < top) return i; }
+        return _project.Tracks.Count;    // below the last lane
+    }
 
     private Brush Res(string key, Brush fallback) => TryFindResource(key) as Brush ?? fallback;
 
@@ -154,9 +166,9 @@ public sealed class TimelineView : FrameworkElement
         for (int i = 0; i < _project.Tracks.Count; i++)
         {
             var tr = _project.Tracks[i];
-            double top = LaneTop(i);
-            dc.DrawRectangle(i % 2 == 0 ? laneA : Brushes.Transparent, null, new Rect(HeaderWidth, top, Math.Max(0, w - HeaderWidth), LaneHeight));
-            dc.DrawLine(new Pen(line, 1), new Point(0, top + LaneHeight), new Point(w, top + LaneHeight));
+            double top = LaneTop(i), lh = LaneH(i);
+            dc.DrawRectangle(i % 2 == 0 ? laneA : Brushes.Transparent, null, new Rect(HeaderWidth, top, Math.Max(0, w - HeaderWidth), lh));
+            dc.DrawLine(new Pen(line, 1), new Point(0, top + lh), new Point(w, top + lh));
 
             bool laneOff = tr.Kind == TrackKind.Audio ? tr.Muted : tr.Hidden;
             foreach (var it in tr.Items)
@@ -164,7 +176,7 @@ public sealed class TimelineView : FrameworkElement
                 double x0 = X(it.Start), x1 = X(it.End);
                 if (x1 < HeaderWidth || x0 > w) continue;
                 if (laneOff) dc.PushOpacity(0.35);
-                var r = new Rect(Math.Max(x0, HeaderWidth), top + 3, Math.Max(2, Math.Min(x1, w) - Math.Max(x0, HeaderWidth)), LaneHeight - 6);
+                var r = new Rect(Math.Max(x0, HeaderWidth), top + 3, Math.Max(2, Math.Min(x1, w) - Math.Max(x0, HeaderWidth)), lh - 6);
                 bool sel = _sel.Contains(it.Id);
                 var fill = ItemFill[(int)it.Kind];
                 dc.DrawRoundedRectangle(fill, sel ? new Pen(Brushes.White, 2) : new Pen(new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)), 1), r, 4, 4);
@@ -173,8 +185,8 @@ public sealed class TimelineView : FrameworkElement
 
                 // fades as small triangles
                 var fadeBrush = new SolidColorBrush(Color.FromArgb(110, 0, 0, 0));
-                if (it.Props.FadeIn > 0) FadeShape(dc, fadeBrush, X(it.Start), X(it.Start + it.Props.FadeIn), top + 3, LaneHeight - 6, true, r);
-                if (it.Props.FadeOut > 0) FadeShape(dc, fadeBrush, X(it.End - it.Props.FadeOut), X(it.End), top + 3, LaneHeight - 6, false, r);
+                if (it.Props.FadeIn > 0) FadeShape(dc, fadeBrush, X(it.Start), X(it.Start + it.Props.FadeIn), top + 3, lh - 6, true, r);
+                if (it.Props.FadeOut > 0) FadeShape(dc, fadeBrush, X(it.End - it.Props.FadeOut), X(it.End), top + 3, lh - 6, false, r);
 
                 if (it.Kind == ItemKind.Audio && Waveforms.TryGetValue($"{it.Source}#{it.Stream}", out var wave)) DrawWave(dc, it, wave, r, top);
 
@@ -199,14 +211,14 @@ public sealed class TimelineView : FrameworkElement
                     var diamond = new SolidColorBrush(chosen ? Color.FromRgb(0xE6, 0xD3, 0x70) : Color.FromArgb(150, 230, 211, 112));
                     foreach (double kt in it.Props.Keys.SelectMany(k => k.Frames).Select(f => Math.Round(f.Time, 3)).Distinct())
                     {
-                        double kx = X(it.Start + kt), ky = top + LaneHeight - 6 * F, d = (chosen ? 4.5 : 3.5) * F;
+                        double kx = X(it.Start + kt), ky = top + lh - 6 * F, d = (chosen ? 4.5 : 3.5) * F;
                         if (kx < Math.Max(x0, HeaderWidth) - 1 || kx > Math.Min(x1, w) + 1) continue;
                         dc.DrawGeometry(diamond, new Pen(new SolidColorBrush(Color.FromArgb(200, 0, 0, 0)), 1), Geometry.Parse($"M {kx - d:0.#},{ky:0.#} L {kx:0.#},{ky - d:0.#} L {kx + d:0.#},{ky:0.#} L {kx:0.#},{ky + d:0.#} Z"));
                     }
                 }
                 if (it.Id == _selected && !tr.Locked && it.Kind == ItemKind.Audio && r.Width > 60 * F)   // volume: a line across the item with a knob to drag up and down
                 {
-                    var (kx, ky) = VolumeKnobPos(it, top);
+                    var (kx, ky) = VolumeKnobPos(it, top, lh);
                     var lineBrush = new SolidColorBrush(Color.FromArgb(150, 255, 255, 255));
                     dc.DrawLine(new Pen(lineBrush, 1) { DashStyle = DashStyles.Dash }, new Point(Math.Max(x0, HeaderWidth), ky), new Point(Math.Min(x1, w), ky));
                     dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)), new Pen(new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)), 1), new Point(kx, ky), 5 * F, 5 * F);
@@ -222,8 +234,8 @@ public sealed class TimelineView : FrameworkElement
                 }
                 if (it.Id == _selected)   // trim handles
                 {
-                    dc.DrawRectangle(Brushes.White, null, new Rect(x0, top + 7, 3, LaneHeight - 14));
-                    dc.DrawRectangle(Brushes.White, null, new Rect(x1 - 3, top + 7, 3, LaneHeight - 14));
+                    dc.DrawRectangle(Brushes.White, null, new Rect(x0, top + 7, 3, lh - 14));
+                    dc.DrawRectangle(Brushes.White, null, new Rect(x1 - 3, top + 7, 3, lh - 14));
                 }
                 if (laneOff) dc.Pop();
             }
@@ -235,8 +247,8 @@ public sealed class TimelineView : FrameworkElement
         foreach (var pb in _pending)
         {
             if (pb.Lane < 0 || pb.Lane >= _project.Tracks.Count) continue;
-            double pt = LaneTop(pb.Lane);
-            var pr = new Rect(Math.Max(HeaderWidth, X(pb.Time)), pt + 3, Math.Max(40, X(pb.Time + pb.Length) - Math.Max(HeaderWidth, X(pb.Time))), LaneHeight - 6);
+            double pt = LaneTop(pb.Lane), plh = LaneH(pb.Lane);
+            var pr = new Rect(Math.Max(HeaderWidth, X(pb.Time)), pt + 3, Math.Max(40, X(pb.Time + pb.Length) - Math.Max(HeaderWidth, X(pb.Time))), plh - 6);
             dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)), new Pen(Brushes.White, 1.2) { DashStyle = DashStyles.Dot }, pr, 4, 4);
             var ptxt = Fmt("Adding " + pb.Label + "…", 11.5 * F, Brushes.White); ptxt.MaxTextWidth = Math.Max(1, pr.Width - 12); ptxt.MaxLineCount = 1; ptxt.Trimming = TextTrimming.CharacterEllipsis;
             dc.DrawText(ptxt, new Point(pr.X + 6, pt + 6 * F));
@@ -245,9 +257,9 @@ public sealed class TimelineView : FrameworkElement
         // the ghost of what is being dragged in from the media panel
         if (_dropEntry is { } de && _dropLane >= 0)
         {
-            double gt = LaneTop(_dropLane);
-            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)), null, new Rect(HeaderWidth, gt, Math.Max(0, w - HeaderWidth), LaneHeight));
-            var gr = new Rect(Math.Max(HeaderWidth, X(_dropTime)), gt + 3, Math.Max(4, X(_dropTime + _dropLength) - Math.Max(HeaderWidth, X(_dropTime))), LaneHeight - 6);
+            double gt = LaneTop(_dropLane), glh = LaneH(_dropLane);
+            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)), null, new Rect(HeaderWidth, gt, Math.Max(0, w - HeaderWidth), glh));
+            var gr = new Rect(Math.Max(HeaderWidth, X(_dropTime)), gt + 3, Math.Max(4, X(_dropTime + _dropLength) - Math.Max(HeaderWidth, X(_dropTime))), glh - 6);
             var gb = ItemFill[(int)(de.Kind == ItemKind.Audio ? ItemKind.Audio : ItemKind.Video)].Clone(); gb.Opacity = 0.55;
             dc.DrawRoundedRectangle(gb, new Pen(Brushes.White, 1.5) { DashStyle = DashStyles.Dash }, gr, 4, 4);
             if (gr.Width > 40)
@@ -265,13 +277,14 @@ public sealed class TimelineView : FrameworkElement
         for (int i = 0; i < _project.Tracks.Count; i++)
         {
             var tr = _project.Tracks[i];
-            double top = LaneTop(i);
-            dc.DrawLine(new Pen(line, 1), new Point(0, top + LaneHeight), new Point(HeaderWidth, top + LaneHeight));
+            double top = LaneTop(i), lh = LaneH(i);
+            dc.DrawLine(new Pen(line, 1), new Point(0, top + lh), new Point(HeaderWidth, top + lh));
             var nm = Fmt(tr.Name, 12 * F, text); nm.MaxTextWidth = HeaderWidth - 40; nm.MaxLineCount = 1; nm.Trimming = TextTrimming.CharacterEllipsis;
-            dc.DrawText(nm, new Point(10, top + 3 * F));
-            dc.DrawText(Fmt(tr.Kind == TrackKind.Audio ? "sound" : tr.Kind == TrackKind.Text ? "text" : "picture", 10 * F, dim), new Point(10, top + 20 * F));
+            bool roomy = lh >= 34 * F;   // a short lane shows just its name, in the middle
+            dc.DrawText(nm, new Point(10, roomy ? top + 3 * F : top + (lh - nm.Height) / 2));
+            if (roomy) dc.DrawText(Fmt(tr.Kind == TrackKind.Audio ? "sound" : tr.Kind == TrackKind.Text ? "text" : "picture", 10 * F, dim), new Point(10, top + 20 * F));
             var lockText = new FormattedText(tr.Locked ? "" : "", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 13 * F, tr.Locked ? text : dim, dpi);
-            double iconTop = top + LaneHeight / 2 - 9 * F;
+            double iconTop = top + lh / 2 - 9 * F;
             dc.DrawText(lockText, new Point(HeaderWidth - 26 * F, iconTop));
             bool off = tr.Kind == TrackKind.Audio ? tr.Muted : tr.Hidden;
             string glyph = tr.Kind == TrackKind.Audio ? (tr.Muted ? "" : "") : (tr.Hidden ? "" : "");
@@ -338,7 +351,8 @@ public sealed class TimelineView : FrameworkElement
 
     private void DrawWave(DrawingContext dc, TimelineItem it, float[] wave, Rect r, double top)
     {
-        double mid = top + LaneHeight / 2 + 5, half = LaneHeight / 2 - 9;
+        double lh = r.Height + 6;                                   // the lane's height (the item is a little shorter than its lane)
+        double mid = top + lh / 2 + 5, half = lh / 2 - 9;
         const double stepPx = 2;
         var g = new StreamGeometry();
         var tops = new List<Point>(); var bottoms = new List<Point>();
@@ -460,10 +474,10 @@ public sealed class TimelineView : FrameworkElement
     private double? _snapLine;
 
     /// <summary>Where the volume knob of an audio item sits: in the middle of the item, higher for louder (the line at 100% is a bit above the middle).</summary>
-    private (double X, double Y) VolumeKnobPos(TimelineItem it, double laneTop)
+    private (double X, double Y) VolumeKnobPos(TimelineItem it, double laneTop, double laneHeight)
     {
-        double span = LaneHeight - 10 * F;
-        double y = laneTop + LaneHeight - 5 * F - Math.Clamp(it.Props.ValueAt(KeyProp.Volume, _playhead - it.Start), 0, 2) / 2 * span;
+        double span = laneHeight - 10 * F;
+        double y = laneTop + laneHeight - 5 * F - Math.Clamp(it.Props.ValueAt(KeyProp.Volume, _playhead - it.Start), 0, 2) / 2 * span;
         double x = Math.Clamp((X(it.Start) + X(it.End)) / 2, Math.Max(X(it.Start), HeaderWidth) + 20 * F, Math.Min(X(it.End), ActualWidth) - 20 * F);
         return (x, y);
     }
@@ -474,7 +488,7 @@ public sealed class TimelineView : FrameworkElement
         if (_selected is not { } id || _project.Find(id) is not { Props.Keys: { Count: > 0 } } it) return null;
         int lane = _project.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));
         if (lane < 0) return null;
-        double ky = LaneTop(lane) + LaneHeight - 6 * F;
+        double ky = LaneTop(lane) + LaneH(lane) - 6 * F;
         if (Math.Abs(p.Y - ky) > 7 * F) return null;
         foreach (double kt in it.Props.Keys.SelectMany(k => k.Frames).Select(f => f.Time).Distinct())
             if (Math.Abs(X(it.Start + kt) - p.X) <= 6 * F) return it.Start + kt;
@@ -486,7 +500,7 @@ public sealed class TimelineView : FrameworkElement
         if (_selected is not { } id || _project.Find(id) is not { Kind: ItemKind.Audio } it) return false;
         int lane = _project.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));
         if (lane < 0 || _project.Tracks[lane].Locked || X(it.End) - Math.Max(X(it.Start), HeaderWidth) <= 60 * F) return false;
-        var (kx, ky) = VolumeKnobPos(it, LaneTop(lane));
+        var (kx, ky) = VolumeKnobPos(it, LaneTop(lane), LaneH(lane));
         return Math.Abs(p.X - kx) <= 8 * F && Math.Abs(p.Y - ky) <= 8 * F;
     }
 
@@ -501,6 +515,14 @@ public sealed class TimelineView : FrameworkElement
         if (Math.Abs(p.Y - hy) > grab) return null;
         if (Math.Abs(p.X - inX) <= grab) return Drag.FadeIn;
         if (Math.Abs(p.X - outX) <= grab) return Drag.FadeOut;
+        return null;
+    }
+
+    /// <summary>The lane whose bottom line (in its name area) is under the mouse: dragging it makes the lane taller or shorter.</summary>
+    private int? EdgeBelowLane(Point p)
+    {
+        for (int i = 0; i < _project.Tracks.Count; i++)
+            if (Math.Abs(p.Y - (LaneTop(i) + LaneH(i))) <= 4 && p.Y > RulerHeight) return i;
         return null;
     }
 
@@ -523,6 +545,11 @@ public sealed class TimelineView : FrameworkElement
         base.OnMouseDown(e);
         var p = e.GetPosition(this);
         if (e.ChangedButton == MouseButton.Right && p.X < HeaderWidth) { int l = LaneAt(p.Y); if (l >= 0 && l < _project.Tracks.Count) RemoveLaneRequested?.Invoke(l); return; }
+        if (e.ChangedButton == MouseButton.Left && p.X < HeaderWidth && EdgeBelowLane(p) is { } edgeLane)
+        {
+            _resizeLane = edgeLane; _resizeFromY = p.Y; _resizeFromScale = _project.Tracks[edgeLane].HeightScale; _dragBase = _project; _dragChanged = false; _drag = Drag.ResizeLane; CaptureMouse();
+            return;
+        }
         if (e.ChangedButton == MouseButton.Middle) { _drag = Drag.Pan; _panFrom = p; _panScroll = _scrollT; CaptureMouse(); return; }
         if (e.ChangedButton != MouseButton.Left) return;
 
@@ -598,9 +625,19 @@ public sealed class TimelineView : FrameworkElement
         if (_drag == Drag.None)
         {
             var hit = ItemAt(p);
+            if (p.X < HeaderWidth && EdgeBelowLane(p) is not null) { Cursor = Cursors.SizeNS; return; }
             if (FadeHandleAt(p) is not null) { Cursor = Cursors.Hand; return; }
             if (VolumeKnobAt(p)) { Cursor = Cursors.SizeNS; return; }
             Cursor = hit is { part: not 0 } ? Cursors.SizeWE : Razor && hit is not null ? Cursors.Cross : null;
+            return;
+        }
+        if (_drag == Drag.ResizeLane)
+        {
+            double was = LaneBase * Math.Clamp(_resizeFromScale, MinLaneScale, MaxLaneScale);
+            double scale = Math.Clamp(_resizeFromScale * (was + (p.Y - _resizeFromY)) / was, MinLaneScale, MaxLaneScale);
+            if (Math.Abs(scale - 1) < 0.06) scale = 1;   // sticks at the normal height
+            var resized = _dragBase!.SetTrack(_resizeLane, t => t with { HeightScale = scale });
+            if (!ReferenceEquals(resized, _project)) { _project = resized; _dragChanged = true; Changing?.Invoke(resized); InvalidateVisual(); }
             return;
         }
         if (_drag == Drag.Pan) { ScrollTime = _panScroll - (p.X - _panFrom.X) / _pps; return; }
@@ -610,7 +647,7 @@ public sealed class TimelineView : FrameworkElement
             _boxTo = new Point(Math.Max(HeaderWidth, p.X), p.Y);
             var box = new Rect(_boxFrom, _boxTo);
             var inside = _project.Tracks.SelectMany((tr, n) => tr.Items.Select(i => (i, n)))
-                .Where(x => new Rect(X(x.i.Start), LaneTop(x.n), Math.Max(1, X(x.i.End) - X(x.i.Start)), LaneHeight).IntersectsWith(box)).Select(x => x.i.Id);
+                .Where(x => new Rect(X(x.i.Start), LaneTop(x.n), Math.Max(1, X(x.i.End) - X(x.i.Start)), LaneH(x.n)).IntersectsWith(box)).Select(x => x.i.Id);
             _sel.Clear(); foreach (var i in _boxBase.Where(_ => _boxAdd)) _sel.Add(i); foreach (var i in inside) _sel.Add(i);
             _selected = _sel.Count > 0 ? _sel.Last() : null;
             InvalidateVisual();
@@ -625,8 +662,8 @@ public sealed class TimelineView : FrameworkElement
         if (_drag == Drag.Volume)
         {
             int lane = b.Tracks.FindIndex(t => t.Items.Any(i => i.Id == _dragId));
-            double span = LaneHeight - 10 * F;
-            double v = Math.Clamp((LaneTop(lane) + LaneHeight - 5 * F - p.Y) / span * 2, 0, 2);
+            double span = LaneH(lane) - 10 * F;
+            double v = Math.Clamp((LaneTop(lane) + LaneH(lane) - 5 * F - p.Y) / span * 2, 0, 2);
             if (Math.Abs(v - 1) < 0.05) v = 1;   // sticks at the original volume
             next = item.Props.HasKeys(KeyProp.Volume) ? b.SetKey(_dragId, KeyProp.Volume, _playhead, v)   // an animated volume gets a keyframe at the playhead
                                                       : b.SetProps(_dragId, o => o with { Volume = v });
@@ -695,7 +732,7 @@ public sealed class TimelineView : FrameworkElement
             PixelsPerSecond *= e.Delta > 0 ? 1.2 : 1 / 1.2;
             ScrollTime = at - (Math.Max(HeaderWidth, p.X) - HeaderWidth) / _pps;   // keep the time under the mouse where it was
         }
-        else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && MaxScrollY > 0 && p.Y > RulerHeight) { _scrollY = Math.Clamp(_scrollY - e.Delta / 120.0 * LaneHeight, 0, MaxScrollY); InvalidateVisual(); }
+        else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && MaxScrollY > 0 && p.Y > RulerHeight) { _scrollY = Math.Clamp(_scrollY - e.Delta / 120.0 * LaneBase, 0, MaxScrollY); InvalidateVisual(); }
         else ScrollTime = _scrollT - e.Delta / 120.0 * VisibleSeconds * 0.15;
         e.Handled = true;
     }

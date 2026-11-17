@@ -131,7 +131,8 @@ public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double 
     [JsonIgnore] public double End => Start + Length;
 }
 
-public sealed record Track(Guid Id, TrackKind Kind, string Name, ImmutableList<TimelineItem> Items, bool Locked = false, bool Muted = false, bool Hidden = false);
+/// <param name="HeightScale">How tall the lane is drawn compared with the normal height (1 is normal); the user drags it.</param>
+public sealed record Track(Guid Id, TrackKind Kind, string Name, ImmutableList<TimelineItem> Items, bool Locked = false, bool Muted = false, bool Hidden = false, double HeightScale = 1);
 
 /// <summary>
 /// The whole edit as an unchanging value: every operation returns a new project, which is what makes undo and redo trivial (<see cref="EditHistory"/>) and the logic easy to test.
