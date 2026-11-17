@@ -79,7 +79,21 @@ public partial class AdvancedEditor
             Filter = "Videos, pictures and sound|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.opus|All files|*.*",
         };
         if (dlg.ShowDialog() != true) return;
-        foreach (var f in dlg.FileNames)
+        ImportFiles(dlg.FileNames);
+    }
+
+    /// <summary>True for a video, picture or sound file the editor can use.</summary>
+    public static bool IsMediaFile(string path)
+    {
+        string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return ImageExt.Contains(ext) || AudioExt.Contains(ext) || ext is ".mp4" or ".mkv" or ".mov" or ".webm" or ".avi";
+    }
+
+    /// <summary>Adds files (from the Import button or dropped on the window) to the media list.</summary>
+    public void ImportFiles(IEnumerable<string> files)
+    {
+        TabMedia.IsChecked = true;
+        foreach (var f in files.Where(f => IsMediaFile(f) && !_imported.Any(i => string.Equals(i.Path, f, StringComparison.OrdinalIgnoreCase))))
         {
             string ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
             var kind = ImageExt.Contains(ext) ? ItemKind.Image : AudioExt.Contains(ext) ? ItemKind.Audio : ItemKind.Video;
@@ -372,7 +386,16 @@ public partial class AdvancedEditor
             if (it.Props.FadeOut > 0 && left < it.Props.FadeOut) env = Math.Min(env, left / it.Props.FadeOut);
             box.Opacity = Math.Clamp(it.Props.ValueAt(KeyProp.Opacity, at) * env, 0, 1);
             box.BorderThickness = new Thickness(Tl.Selection.Contains(it.Id) ? 1.5 : 0);
+            box.RenderTransformOrigin = new Point(0.5, 0.5);
+            double turn = it.Props.ValueAt(KeyProp.Rotation, at);
+            box.RenderTransform = Math.Abs(turn) < 0.01 ? Transform.Identity : new RotateTransform(turn);
             box.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            if (it.Kind == ItemKind.Image && box.Child is Image shown)
+            {
+                var c = it.Props;
+                double iw = box.DesiredSize.Width - 2 * box.BorderThickness.Left, ih = box.DesiredSize.Height - 2 * box.BorderThickness.Top;
+                shown.Clip = c.HasCrop ? new RectangleGeometry(new Rect(c.CropL * iw, c.CropT * ih, iw * (1 - c.CropL - c.CropR), ih * (1 - c.CropT - c.CropB))) : null;
+            }
             Canvas.SetLeft(box, posX * W - box.DesiredSize.Width / 2);
             Canvas.SetTop(box, posY * H - box.DesiredSize.Height / 2);
             if (it.Id == _selected) PlaceScaleHandle(it, box);
@@ -450,10 +473,10 @@ public partial class AdvancedEditor
 
     // ---- text and placement controls
 
-    private void TextInput_Changed(object sender, TextChangedEventArgs e)
+    private void WordsBox_Changed(object sender, TextChangedEventArgs e)
     {
         if (_uiBusy) return;
-        ApplyToSelection(o => o with { Text = TextInput.Text }, "words");
+        ApplyToSelection(o => o with { Text = WordsBox.Text }, "words");
     }
 
     /// <summary>Changes the same property of every selected item (the others keep their own values).</summary>

@@ -73,6 +73,12 @@ Step 'export: overlay, fades, loop a picture, mix sound' $ff @('-hide_banner','-
 $animGraph = "[1:v]setpts=PTS-STARTPTS,fps=30,scale=320:180:force_original_aspect_ratio=decrease,scale=w='trunc(iw*if(lt(t,1),0.5,1.2)/2)*2':h='trunc(ih*if(lt(t,1),0.5,1.2)/2)*2':eval=frame,format=yuva420p,sendcmd=c='0 colorchannelmixer@opv0 aa 0.3;1 colorchannelmixer@opv0 aa 0.9;',colorchannelmixer@opv0=aa=0.3,setpts=PTS+0.2/TB[v0];[0:v][v0]overlay=x='if(lt(t,1),50,150)-overlay_w/2':y=90-overlay_h/2:eof_action=pass:format=auto,format=yuv420p[vout];[2:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=volume='if(lt(t,1),0.2,1.4)':eval=frame,alimiter=limit=0.95,apad=whole_dur=3[aout]"
 Step 'export: animated position, zoom, opacity and volume' $ff @('-hide_banner','-loglevel','error','-y','-f','lavfi','-i','color=c=black:s=320x180:r=30:d=3','-ss','0','-t','2','-i',$src,'-f','s16le','-ar','48000','-ac','2','-ss','0','-t','2','-i',"$w\a.pcm",'-filter_complex',$animGraph,'-map','[vout]','-map','[aout]','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-t','3','-movflags','+faststart',"$w\anim.mp4") "$w\anim.mp4"
 
+# Pictures with transparency (text drawn by the editor, pictures and GIF frames are PNG files), and the filters for turning, cropping and cross-dissolving.
+$png = Join-Path $PSScriptRoot 'smoke.png'
+Step 'png: read a picture with transparency' $ff @('-hide_banner','-loglevel','error','-y','-loop','1','-framerate','30','-t','1','-i',$png,'-vf','format=rgba,scale=64:-2','-c:v','libx264','-pix_fmt','yuv420p',"$w\png.mp4") "$w\png.mp4"
+$moveGraph = "[0:v]trim=duration=2,setpts=PTS-STARTPTS,scale=320:180,format=yuva420p,rotate=a=0.3:c=none:ow=rotw(0.3):oh=roth(0.3),crop=iw*0.8:ih*0.8,hflip,vflip[a];[1:v]trim=duration=2,setpts=PTS-STARTPTS,scale=320:180,format=yuva420p[b];[a]scale=320:180[a2];[a2][b]xfade=transition=fade:duration=1:offset=1,format=yuv420p[vout]"
+Step 'rotate, crop, flip and cross-dissolve' $ff @('-hide_banner','-loglevel','error','-y','-i',$src,'-i',$src,'-filter_complex',$moveGraph,'-map','[vout]','-c:v','libx264','-pix_fmt','yuv420p','-t','3',"$w\move.mp4") "$w\move.mp4"
+
 # The GPU encoder has to be in the build (it can only run on a PC with an NVIDIA card).
 $enc = & $ff -hide_banner -encoders 2>&1 | Out-String
 if ($enc -match 'h264_nvenc') { Write-Host 'ok     h264_nvenc is in the build' } else { Write-Host 'FAILED h264_nvenc is missing'; $failed += 'h264_nvenc' }

@@ -181,14 +181,28 @@ public partial class MainWindow
     private static string? DroppedEdit(DragEventArgs e) =>
         e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] files ? files.FirstOrDefault(f => f.EndsWith(".bfedit", StringComparison.OrdinalIgnoreCase)) : null;
 
+    /// <summary>Video, picture and sound files dragged in, when the editor is open to take them.</summary>
+    private List<string> DroppedMedia(DragEventArgs e) =>
+        Advanced.Visibility == Visibility.Visible && Advanced.HasSession && e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] files
+            ? files.Where(AdvancedEditor.IsMediaFile).ToList() : new List<string>();
+
     private void Window_DragOver(object sender, DragEventArgs e)
     {
         var edit = DroppedEdit(e);
-        e.Effects = edit is not null ? DragDropEffects.Copy : DragDropEffects.None;
-        if (edit is not null)
+        var media = edit is null ? DroppedMedia(e) : new List<string>();
+        e.Effects = edit is not null || media.Count > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+        if (edit is not null || media.Count > 0)
         {
-            DropName.Text = System.IO.Path.GetFileNameWithoutExtension(edit);
-            DropTitle.Text = Advanced.HasSession && Advanced.IsDirty ? "Drop to open this edit (you'll be asked about the unsaved one)" : "Drop to open this edit";
+            if (edit is not null)
+            {
+                DropName.Text = System.IO.Path.GetFileNameWithoutExtension(edit);
+                DropTitle.Text = Advanced.HasSession && Advanced.IsDirty ? "Drop to open this edit (you'll be asked about the unsaved one)" : "Drop to open this edit";
+            }
+            else
+            {
+                DropName.Text = media.Count == 1 ? System.IO.Path.GetFileName(media[0]) : $"{media.Count} files";
+                DropTitle.Text = "Drop to add to your media";
+            }
             DropOverlay.Visibility = Visibility.Visible;
             _dropHide ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
             _dropHide.Tick -= HideDropOverlay; _dropHide.Tick += HideDropOverlay;
@@ -211,6 +225,7 @@ public partial class MainWindow
     {
         DropOverlay.Visibility = Visibility.Collapsed;
         if (DroppedEdit(e) is { } path) ShowAdvanced(a => _ = a.OpenFileAsync(path));
+        else if (DroppedMedia(e) is { Count: > 0 } media) Advanced.ImportFiles(media);
         e.Handled = true;
     }
 

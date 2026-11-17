@@ -37,7 +37,7 @@ jobs:
           install: >-
             base-devel git diffutils make
             mingw-w64-x86_64-toolchain mingw-w64-x86_64-nasm mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-x264
+            mingw-w64-x86_64-x264 mingw-w64-x86_64-zlib
 
       - name: Get the sources
         run: |
@@ -53,7 +53,7 @@ jobs:
             --prefix=/tmp/ffout --enable-shared --disable-static \
             --enable-gpl --disable-autodetect --disable-doc --disable-debug --disable-ffplay \
             --disable-everything \
-            --enable-libx264 --enable-ffnvcodec --enable-nvenc \
+            --enable-libx264 --enable-ffnvcodec --enable-nvenc --enable-zlib \
             --enable-decoder=h264,hevc,vp9,aac,mp3,mp3float,opus,flac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8,vorbis,wrapped_avframe,png,mjpeg,bmp,gif,webp \
             --enable-encoder=libx264,h264_nvenc,aac,mjpeg,pcm_s16le \
             --enable-parser=h264,aac,hevc,vp9,opus,mpegaudio,flac,vorbis \
@@ -62,7 +62,7 @@ jobs:
             --enable-protocol=file,pipe \
             --enable-bsf=h264_mp4toannexb,aac_adtstoasc,extract_extradata,null \
             --enable-indev=lavfi \
-            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine,color,overlay,fade,colorchannelmixer,pad,atempo,afade,adelay,apad,sendcmd \
+            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine,color,overlay,fade,colorchannelmixer,pad,atempo,afade,adelay,apad,sendcmd,rotate,crop,hflip,vflip,xfade,acrossfade \
             --pkg-config-flags=--static
           make -j"$(nproc)"
           make install

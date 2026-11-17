@@ -12,10 +12,13 @@ public enum TrackKind { Video, Audio, Text }
 /// Volume is a multiplier (1 = as recorded); Opacity is 0 to 1; Speed is 1 for normal.
 /// </summary>
 public sealed record ItemProps(double Opacity = 1, double Volume = 1, double FadeIn = 0, double FadeOut = 0, double Speed = 1, string? Text = null,
-    double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null)
+    double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null, double Rotation = 0, double CropL = 0, double CropT = 0, double CropR = 0, double CropB = 0)
 {
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
-    public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, _ => Scale };
+    public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, KeyProp.Rotation => Rotation, _ => Scale };
+
+    /// <summary>True when part of the picture is cut off (each edge is a share of the picture's width or height).</summary>
+    public bool HasCrop => CropL > 0.001 || CropT > 0.001 || CropR > 0.001 || CropB > 0.001;
 
     public bool HasKeys(KeyProp p)
     {
@@ -48,7 +51,7 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
     public static double Limit(KeyProp p, double v) => p switch
     {
         KeyProp.Opacity => Math.Clamp(v, 0, 1), KeyProp.Volume => Math.Clamp(v, 0, 2), KeyProp.PosX or KeyProp.PosY => Math.Clamp(v, 0, 1),
-        KeyProp.Speed => Math.Clamp(v, 0.1, 8), KeyProp.TextSize => Math.Clamp(v, 0.02, 0.5), _ => Math.Clamp(v, 0.05, 6),
+        KeyProp.Speed => Math.Clamp(v, 0.1, 8), KeyProp.TextSize => Math.Clamp(v, 0.02, 0.5), KeyProp.Rotation => Math.Clamp(v, -360, 360), _ => Math.Clamp(v, 0.05, 6),
     };
 
     private ItemProps WithFrames(KeyProp p, ImmutableList<Keyframe> frames)
@@ -111,6 +114,8 @@ public enum KeyProp
     /// <summary>Not animated any more (the time stretching made keyframes drift); kept only so edits saved while it existed still open. Its keyframes are dropped on opening.</summary>
     Speed,
     TextSize,
+    /// <summary>Turn, in degrees (clockwise).</summary>
+    Rotation,
 }
 
 /// <summary>A value a property has at a moment, counted in seconds from the start of the item.</summary>
@@ -320,7 +325,8 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
             Volume = Math.Max(0, np.Volume),
             Speed = Math.Clamp(np.Speed, 0.1, 8),
             PosX = Math.Clamp(np.PosX, 0, 1), PosY = Math.Clamp(np.PosY, 0, 1),
-            Scale = Math.Clamp(np.Scale, 0.05, 6), TextSize = Math.Clamp(np.TextSize, 0.02, 0.5),
+            Scale = Math.Clamp(np.Scale, 0.05, 6), TextSize = Math.Clamp(np.TextSize, 0.02, 0.5), Rotation = Math.Clamp(np.Rotation, -360, 360),
+            CropL = Math.Clamp(np.CropL, 0, 0.9), CropT = Math.Clamp(np.CropT, 0, 0.9), CropR = Math.Clamp(np.CropR, 0, 0.9), CropB = Math.Clamp(np.CropB, 0, 0.9),
             FadeIn = Math.Clamp(np.FadeIn, 0, item.Length),
             FadeOut = Math.Clamp(np.FadeOut, 0, item.Length),
         };
@@ -345,6 +351,77 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
                     FadeIn = starts ? Math.Min(seconds, it.Length) : o.FadeIn,
                 });
             }
+        return p;
+    }
+
+    /// <summary>
+    /// A real cross-dissolve at a cut. What starts at the cut is brought forward by <paramref name="seconds"/> (using the footage just before where it starts, so the clip must have
+    /// that much before its start: a clip cut from a longer one does) and placed on a lane of its own above, fading in while the picture before it carries on underneath. Its sound is
+    /// brought forward too and fades in while the sound before it fades out. Returns how many items were changed (0 when there was no footage to use or nothing meets at that time).
+    /// </summary>
+    public (Project Project, int Changed) CrossDissolveAt(double time, double seconds)
+    {
+        var p = this; int changed = 0;
+        foreach (var next in Items.Where(i => Math.Abs(i.Start - time) < 0.03 && i.Kind is ItemKind.Video or ItemKind.Image or ItemKind.Audio).ToList())
+        {
+            int lane = p.TrackOf(next.Id);
+            if (lane < 0 || p.Tracks[lane].Locked) continue;
+            var before = p.Tracks[lane].Items.FirstOrDefault(i => i.Id != next.Id && Math.Abs(i.End - time) < 0.03);
+            if (before is null) continue;
+            double speed = Math.Max(0.1, next.Props.Speed);
+            double d = Math.Min(seconds, Math.Min(next.SourceIn / speed, before.Length));        // how much extra footage there is before it starts
+            if (next.Kind == ItemKind.Image) d = Math.Min(seconds, before.Length);                 // a picture has no footage to run out of
+            if (d < 0.05) continue;
+
+            var moved = next with
+            {
+                Start = time - d,
+                SourceIn = next.Kind == ItemKind.Image ? next.SourceIn : next.SourceIn - d * speed,
+                SourceOut = next.Kind == ItemKind.Image ? next.SourceOut + d * speed : next.SourceOut,
+                Props = next.Props.ShiftKeys(d) with { FadeIn = d },
+            };
+            // it overlaps what is before it on its own lane, so it goes on another lane of the same kind
+            var kind = p.Tracks[lane].Kind;
+            var without = p.Replace(lane, l => l.Remove(next));
+            Project? placed = null;
+            var order = kind == TrackKind.Audio ? Enumerable.Range(0, without.Tracks.Count).Where(i => i != lane && without.Tracks[i].Kind == kind).ToList()
+                                                : Enumerable.Range(0, lane).Reverse().Where(i => without.Tracks[i].Kind == kind).ToList();   // picture: the nearest lane above
+            foreach (var i in order) { placed = without.Add(i, moved); if (placed is not null) break; }
+            if (placed is null)
+            {
+                var grown = without.AddTrack(kind, kind == TrackKind.Audio ? "Sound" : "Overlay");
+                placed = grown.Add(kind == TrackKind.Audio ? grown.Tracks.Count - 1 : 0, moved);
+            }
+            if (placed is null) continue;
+            p = placed; changed++;
+            if (before.Kind == ItemKind.Audio) p = p.SetProps(before.Id, o => o with { FadeOut = d });   // the sound before fades out while the new sound fades in
+        }
+        return (p, changed);
+    }
+
+    /// <summary>
+    /// The main picture lane (the lowest picture lane) without gaps: each item moves back against the one before it, the first to time zero. The sound linked to a moved
+    /// picture moves with it (when it can). Returns the project unchanged when there is nothing to close.
+    /// </summary>
+    public Project CloseGaps()
+    {
+        int lane = Tracks.FindLastIndex(t => t.Kind == TrackKind.Video && !t.Locked);
+        if (lane < 0) return this;
+        var p = this; double end = 0;
+        foreach (var id in Tracks[lane].Items.OrderBy(i => i.Start).Select(i => i.Id).ToList())
+        {
+            var item = p.Find(id)!;
+            double delta = end - item.Start;
+            if (delta < -1e-6)   // a gap before it: it moves back
+            {
+                var group = item.LinkId is { } link ? p.Items.Where(i => i.LinkId == link).Select(i => i.Id).ToList() : new List<Guid> { id };
+                var moved = p.Shift(group, delta);
+                if (ReferenceEquals(moved, p)) moved = p.Shift(new List<Guid> { id }, delta);     // the sound would not fit: the picture still closes the gap
+                p = moved;
+                item = p.Find(id)!;
+            }
+            end = item.End;
+        }
         return p;
     }
 

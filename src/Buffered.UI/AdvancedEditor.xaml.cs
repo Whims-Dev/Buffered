@@ -16,7 +16,7 @@ namespace Buffered.UI;
 /// </summary>
 public partial class AdvancedEditor : UserControl
 {
-    private const string Hint = "Space plays · S cuts · Delete removes · C razor · Ctrl+D duplicates · M marks · L loops";
+    private const string Hint = "Space plays · S cuts · Delete removes · C razor · Ctrl+D duplicates · Q W trim to the playhead · Up Down jump between cuts · M marks · L loops";
 
     public event Action? CloseRequested;
 
@@ -58,7 +58,7 @@ public partial class AdvancedEditor : UserControl
         InitProject();
         InitMore();
         Tl.Changing += p => { Tl.Project = p; PushLanesOf(p); Sync(false); };
-        Tl.Committed += p => { _h.Apply(p); AfterEdit(); };
+        Tl.Committed += p => { _h.Apply(Magnetic(p)); AfterEdit(); };
         Tl.CutMade += p => { _h.Apply(p); AfterEdit(); };
         Tl.LaneFlagToggled += (lane, flag) =>
         {
@@ -211,8 +211,8 @@ public partial class AdvancedEditor : UserControl
     public void Release()
     {
         _timer.Stop(); _playing = false; _videoPlaying = false; _clock.Reset();
-        try { Video.Stop(); Video.Close(); } catch (InvalidOperationException) { }
-        _src = null; _activeId = null; _waiting = false; _openId++; _savedProject = null; _hasSession = false;
+        try { Video.Stop(); Video.Close(); Video2.Stop(); Video2.Close(); } catch (InvalidOperationException) { }
+        _src = null; _src2 = null; _v2Playing = false; _activeId = null; _waiting = false; _openId++; _savedProject = null; _hasSession = false;
         _mixer.Dispose();
         foreach (var f in _pcmFiles) Media.TryDeleteFile(f);
         _pcmFiles.Clear();
@@ -291,8 +291,10 @@ public partial class AdvancedEditor : UserControl
         double t = _t;
         RenderOverlay(p, t);
         if (_deferSync) return;   // the page has only just been shown: the picture waits until it has been laid out
-        var active = p.Tracks.Where(tr => tr.Kind == TrackKind.Video && !tr.Hidden).SelectMany(tr => tr.Items)
-                      .FirstOrDefault(i => i.Kind == ItemKind.Video && t >= i.Start - 1e-9 && t < i.End);
+        var showing = p.Tracks.Where(tr => tr.Kind == TrackKind.Video && !tr.Hidden).SelectMany(tr => tr.Items)
+                       .Where(i => i.Kind == ItemKind.Video && t >= i.Start - 1e-9 && t < i.End).ToList();
+        var active = showing.FirstOrDefault();                 // the topmost picture
+        SyncUnder(showing.Skip(1).FirstOrDefault(), t, seek);  // and the one below it, when they overlap (a cross-dissolve)
         if (active is null)
         {
             if (_videoPlaying) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; }
@@ -331,18 +333,29 @@ public partial class AdvancedEditor : UserControl
         if (active.Props.FadeOut > 0 && left < active.Props.FadeOut) env = Math.Min(env, left / active.Props.FadeOut);
         Video.Opacity = Math.Clamp(active.Props.ValueAt(KeyProp.Opacity, into) * env, 0, 1);
         Video.IsMuted = true;   // all sound comes from the sound items, through the mixer
-        ApplyVideoTransform(active);
+        ApplyVideoTransform(Video, active);
     }
 
-    /// <summary>Puts the picture where the item's Scale and position say (zoomed in, moved), clipped by the frame.</summary>
-    private void ApplyVideoTransform(TimelineItem active)
+    /// <summary>Puts the picture where the item's Scale and position say (zoomed in, moved, turned), clipped by its crop and the frame.</summary>
+    private void ApplyVideoTransform(MediaElement player, TimelineItem active)
     {
         double at = _t - active.Start;
         double s = active.Props.ValueAt(KeyProp.Scale, at), px = active.Props.ValueAt(KeyProp.PosX, at), py = active.Props.ValueAt(KeyProp.PosY, at);
-        Video.RenderTransformOrigin = new Point(0.5, 0.5);
-        Video.RenderTransform = Math.Abs(s - 1) < 0.001 && Math.Abs(px - 0.5) < 0.001 && Math.Abs(py - 0.5) < 0.001
+        player.RenderTransformOrigin = new Point(0.5, 0.5);
+        if (active.Props.HasCrop && player.NaturalVideoWidth > 0 && player.NaturalVideoHeight > 0)
+        {
+            // the picture sits centred in the frame at its own shape; the part that is cut off is hidden
+            double va = (double)player.NaturalVideoWidth / player.NaturalVideoHeight, sa = Stage.Width / Math.Max(1, Stage.Height);
+            double pw = va > sa ? Stage.Width : Stage.Height * va, ph = va > sa ? Stage.Width / va : Stage.Height;
+            double px0 = (Stage.Width - pw) / 2, py0 = (Stage.Height - ph) / 2;
+            var c = active.Props;
+            player.Clip = new RectangleGeometry(new Rect(px0 + c.CropL * pw, py0 + c.CropT * ph, pw * (1 - c.CropL - c.CropR), ph * (1 - c.CropT - c.CropB)));
+        }
+        else player.Clip = null;
+        double turn = active.Props.ValueAt(KeyProp.Rotation, at);
+        player.RenderTransform = Math.Abs(s - 1) < 0.001 && Math.Abs(px - 0.5) < 0.001 && Math.Abs(py - 0.5) < 0.001 && Math.Abs(turn) < 0.01
             ? Transform.Identity
-            : new TransformGroup { Children = { new ScaleTransform(s, s), new TranslateTransform((px - 0.5) * Stage.Width, (py - 0.5) * Stage.Height) } };
+            : new TransformGroup { Children = { new ScaleTransform(s, s), new RotateTransform(turn), new TranslateTransform((px - 0.5) * Stage.Width, (py - 0.5) * Stage.Height) } };
     }
 
     private void FitVideo_Click(object sender, RoutedEventArgs e) => ApplyToSelection(o => o with { Scale = 1, PosX = 0.5, PosY = 0.5 }, "fit");
@@ -429,8 +442,8 @@ public partial class AdvancedEditor : UserControl
     private void DeleteSelected(bool ripple)
     {
         if (Tl.Selection.Count == 0) { StatusText.Text = "Click an item to select it first"; return; }
-        ripple ^= RippleToggle.IsChecked == true;   // with Ripple on, Delete closes the gap and Shift+Delete leaves it
-        _h.Apply(_h.Current.DeleteMany(Tl.Selection.ToList(), ripple));
+        ripple ^= RippleToggle.IsChecked == true;   // with Magnetic on, Delete closes the gap and Shift+Delete leaves it
+        _h.Apply(Magnetic(_h.Current.DeleteMany(Tl.Selection.ToList(), ripple)));
         Tl.Selected = null; _selected = null;
         AfterEdit();
     }
@@ -464,6 +477,20 @@ public partial class AdvancedEditor : UserControl
         if (CutTime() is not { } at) { StatusText.Text = "Select an item at the cut first"; return; }
         var menu = new ContextMenu { PlacementTarget = TransitionButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Top };
         void Add(string text, double seconds) { var m = new MenuItem { Header = text }; m.Click += (_, _) => { _h.Apply(_h.Current.TransitionAt(at, seconds)); AfterEdit(); }; menu.Items.Add(m); }
+        void Dissolve(string text, double seconds)
+        {
+            var m = new MenuItem { Header = text };
+            m.Click += (_, _) =>
+            {
+                var (next, changed) = _h.Current.CrossDissolveAt(at, seconds);
+                if (changed == 0) { StatusText.Text = "No extra footage before this cut to dissolve with (a clip that was cut from a longer one has it), or nothing meets here"; return; }
+                _h.Apply(next); AfterEdit();
+            };
+            menu.Items.Add(m);
+        }
+        Dissolve("Cross-dissolve, quick (0.5 s)", 0.5);
+        Dissolve("Cross-dissolve, smooth (1 s)", 1.0);
+        menu.Items.Add(new Separator());
         Add("Dip through black, quick (0.3 s)", 0.3);
         Add("Dip through black, smooth (0.6 s)", 0.6);
         Add("Dip through black, slow (1 s)", 1.0);
@@ -536,6 +563,7 @@ public partial class AdvancedEditor : UserControl
         Vis(timed, SpeedRow, SpeedSlider);
         Vis(it.Kind == ItemKind.Text, WordsPanel);
         Vis(overlay || it.Kind == ItemKind.Video, PlacePanel);
+        Vis(it.Kind is ItemKind.Video or ItemKind.Image, CropPanel);
         Vis(it.Kind == ItemKind.Video, FitRow);
         _uiBusy = true;
         try
@@ -549,8 +577,10 @@ public partial class AdvancedEditor : UserControl
             SpeedSlider.Value = it.Props.Speed;
             SizeSlider.Value = it.Props.ValueAt(KeyProp.TextSize, at) * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
             PosXSlider.Value = it.Props.ValueAt(KeyProp.PosX, at) * 100; PosYSlider.Value = it.Props.ValueAt(KeyProp.PosY, at) * 100;
+            RotateSlider.Value = it.Props.ValueAt(KeyProp.Rotation, at);
+            CropLSlider.Value = it.Props.CropL * 100; CropTSlider.Value = it.Props.CropT * 100; CropRSlider.Value = it.Props.CropR * 100; CropBSlider.Value = it.Props.CropB * 100;
             UpdateKeyButtons(it, at);
-            if (TextInput.Text != (it.Props.Text ?? "") && !TextInput.IsKeyboardFocusWithin) TextInput.Text = it.Props.Text ?? "";
+            if (WordsBox.Text != (it.Props.Text ?? "") && !WordsBox.IsKeyboardFocusWithin) WordsBox.Text = it.Props.Text ?? "";
             ShowPropValues();
         }
         finally { _uiBusy = false; }
@@ -566,7 +596,8 @@ public partial class AdvancedEditor : UserControl
         FadeOutValue.Text = $"{FadeOutSlider.Value:0.0} s";
         SpeedValue.Text = $"{SpeedSlider.Value:0.##}x";
         SizeValue.Text = $"{SizeSlider.Value:0}%"; ScaleValue.Text = $"{ScaleSlider.Value:0}%";
-        PosXValue.Text = $"{PosXSlider.Value:0}%"; PosYValue.Text = $"{PosYSlider.Value:0}%";
+        PosXValue.Text = $"{PosXSlider.Value:0}%"; PosYValue.Text = $"{PosYSlider.Value:0}%"; RotateValue.Text = $"{RotateSlider.Value:0}°";
+        CropLValue.Text = $"{CropLSlider.Value:0}%"; CropTValue.Text = $"{CropTSlider.Value:0}%"; CropRValue.Text = $"{CropRSlider.Value:0}%"; CropBValue.Text = $"{CropBSlider.Value:0}%";
     }
 
     private void Prop_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -579,7 +610,7 @@ public partial class AdvancedEditor : UserControl
         {
             if (animated is { } kp && next.Find(id) is { } target && target.Props.HasKeys(kp))
             {
-                next = next.SetKey(id, kp, _t, ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
+                next = next.SetKey(id, kp, _t, kp == KeyProp.Rotation ? ((Slider)sender).Value : ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
                 continue;
             }
             next = next.SetProps(id, o =>
@@ -591,6 +622,11 @@ public partial class AdvancedEditor : UserControl
                 sender == ScaleSlider ? o with { Scale = ScaleSlider.Value / 100 } :
                 sender == PosXSlider ? o with { PosX = PosXSlider.Value / 100 } :
                 sender == PosYSlider ? o with { PosY = PosYSlider.Value / 100 } :
+                sender == RotateSlider ? o with { Rotation = RotateSlider.Value } :
+                sender == CropLSlider ? o with { CropL = Math.Min(CropLSlider.Value / 100, 0.95 - o.CropR) } :
+                sender == CropRSlider ? o with { CropR = Math.Min(CropRSlider.Value / 100, 0.95 - o.CropL) } :
+                sender == CropTSlider ? o with { CropT = Math.Min(CropTSlider.Value / 100, 0.95 - o.CropB) } :
+                sender == CropBSlider ? o with { CropB = Math.Min(CropBSlider.Value / 100, 0.95 - o.CropT) } :
                 o with { Speed = SpeedSlider.Value });
             // a slower item gets longer: refuse it if that would run into its neighbour
             var item = next.Find(id)!;
@@ -630,6 +666,14 @@ public partial class AdvancedEditor : UserControl
             case Key.A when ctrl: Tl.SetSelection(_h.Current.Items.Select(i => i.Id)); _selected = Tl.Selected; ShowProps(); break;
             case Key.Z when ctrl: _h.Undo(); AfterEdit(); break;
             case Key.Y when ctrl: _h.Redo(); AfterEdit(); break;
+            case Key.Z when ctrl && shift: _h.Redo(); AfterEdit(); break;
+            case Key.Q: TrimToPlayhead(true); break;
+            case Key.W: TrimToPlayhead(false); break;
+            case Key.Up: JumpToCut(false); break;
+            case Key.Down: JumpToCut(true); break;
+            case Key.OemPlus or Key.Add: Tl.PixelsPerSecond *= 1.25; break;
+            case Key.OemMinus or Key.Subtract: Tl.PixelsPerSecond /= 1.25; break;
+            case Key.F: Tl.ZoomToFit(_h.Current.Duration); break;
             case Key.Home: SetTime(0, true); Tl.ScrollTime = 0; break;
             case Key.End: SetTime(_h.Current.Duration, true); break;
             case Key.Left: SetTime(_t - (shift ? 1 : 1 / 30.0), true); break;

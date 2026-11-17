@@ -102,6 +102,7 @@
 
             <Border Grid.Column="1" Background="Black" CornerRadius="6" ClipToBounds="True" SizeChanged="Stage_SizeChanged" x:Name="StageHost">
                 <Grid x:Name="Stage" HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Height="225" ClipToBounds="True">
+                    <MediaElement x:Name="Video2" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform" IsMuted="True" Opacity="0" MediaOpened="Video2_Opened"/>
                     <MediaElement x:Name="Video" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform"
                                   MediaOpened="Video_Opened" MediaFailed="Video_Failed"/>
                     <TextBlock x:Name="EmptyText" Text="Nothing here at the playhead" Foreground="#99FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
@@ -126,17 +127,30 @@
                         <Slider x:Name="SpeedSlider" Minimum="0.25" Maximum="4" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <StackPanel x:Name="WordsPanel">
                             <TextBlock Text="Words" Margin="0,0,0,4"/>
-                            <TextBox x:Name="TextInput" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" Margin="0,0,0,10" TextChanged="TextInput_Changed"/>
+                            <TextBox x:Name="WordsBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" Margin="0,0,0,10" TextChanged="WordsBox_Changed"/>
                             <DockPanel Margin="0,0,0,10"><Button x:Name="KeySize" Tag="TextSize" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="SizeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Size"/></DockPanel>
                             <Slider x:Name="SizeSlider" Minimum="2" Maximum="30" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                             <TextBlock Text="Colour" Margin="0,0,0,6"/>
                             <WrapPanel x:Name="Swatches" Margin="0,0,0,10"/>
+                        </StackPanel>
+                        <StackPanel x:Name="CropPanel" Margin="0,0,0,2">
+                            <TextBlock Text="Crop" Margin="0,0,0,6"/>
+                            <DockPanel><TextBlock x:Name="CropLValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Left" Style="{StaticResource Caption}"/></DockPanel>
+                            <Slider x:Name="CropLSlider" Minimum="0" Maximum="90" Margin="0,-2,0,6" ValueChanged="Prop_Changed"/>
+                            <DockPanel><TextBlock x:Name="CropTValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Top" Style="{StaticResource Caption}"/></DockPanel>
+                            <Slider x:Name="CropTSlider" Minimum="0" Maximum="90" Margin="0,-2,0,6" ValueChanged="Prop_Changed"/>
+                            <DockPanel><TextBlock x:Name="CropRValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Right" Style="{StaticResource Caption}"/></DockPanel>
+                            <Slider x:Name="CropRSlider" Minimum="0" Maximum="90" Margin="0,-2,0,6" ValueChanged="Prop_Changed"/>
+                            <DockPanel><TextBlock x:Name="CropBValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Bottom" Style="{StaticResource Caption}"/></DockPanel>
+                            <Slider x:Name="CropBSlider" Minimum="0" Maximum="90" Margin="0,-2,0,12" ValueChanged="Prop_Changed"/>
                         </StackPanel>
                         <StackPanel x:Name="PlacePanel">
                             <StackPanel x:Name="FitRow" Orientation="Horizontal" Margin="0,0,0,12">
                                 <Button Content="Fit in the frame" Height="30" Margin="0,0,6,0" Click="FitVideo_Click" ToolTip="Show the whole picture, with bars if its shape differs"/>
                                 <Button Content="Fill the frame" Height="30" Click="FillVideo_Click" ToolTip="Zoom in until the picture covers the whole frame (the edges are cut off)"/>
                             </StackPanel>
+                            <DockPanel Margin="0,0,0,10"><Button x:Name="KeyRotate" Tag="Rotation" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="RotateValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Turn"/></DockPanel>
+                            <Slider x:Name="RotateSlider" Minimum="-180" Maximum="180" TickFrequency="45" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                             <DockPanel Margin="0,0,0,10"><Button x:Name="KeyScale" Tag="Scale" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="ScaleValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Scale"/></DockPanel>
                             <Slider x:Name="ScaleSlider" Minimum="5" Maximum="400" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                             <DockPanel Margin="0,0,0,10"><Button x:Name="KeyPosX" Tag="PosX" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="PosXValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Across"/></DockPanel>
@@ -179,7 +193,7 @@
             </StackPanel>
             <StackPanel Grid.Column="4" Orientation="Horizontal">
                 <ToggleButton x:Name="SnapToggle" IsChecked="True" Height="32" Width="40" Margin="0,0,4,0" Click="Snap_Click" ToolTip="Snap: stick to edges, markers and the playhead while dragging" AutomationProperties.Name="Snap"><Path Style="{StaticResource ToolIcon}" Data="M6,3 V11 A6,6 0 0 0 18,11 V3 M6,8 H10 M14,8 H18"/></ToggleButton>
-                <ToggleButton x:Name="RippleToggle" Height="32" Width="40" Margin="0,0,8,0" ToolTip="Ripple: Delete closes the gap it leaves (Shift+Delete does the opposite)" AutomationProperties.Name="Ripple"><Path Style="{StaticResource ToolIcon}" Data="M2,12 H7 M22,12 H17 M9,6 L12,12 L9,18 M15,6 L12,12 L15,18"/></ToggleButton>
+                <ToggleButton x:Name="RippleToggle" Height="32" Width="40" Margin="0,0,8,0" ToolTip="Magnetic: the main picture lane never has gaps (they close as you move, trim or delete), and Delete closes the gap it leaves (Shift+Delete does the opposite)" AutomationProperties.Name="Ripple"><Path Style="{StaticResource ToolIcon}" Data="M2,12 H7 M22,12 H17 M9,6 L12,12 L9,18 M15,6 L12,12 L15,18"/></ToggleButton>
                 <Button Height="32" Width="40" Margin="0,0,8,0" Click="Fit_Click" ToolTip="Fit: zoom to show everything" AutomationProperties.Name="Fit"><Path Style="{StaticResource ToolIcon}" Data="M4,9 V4 H9 M20,9 V4 H15 M4,15 V20 H9 M20,15 V20 H15"/></Button>
                 <Slider x:Name="ZoomSlider" Width="80" Minimum="0" Maximum="1" VerticalAlignment="Center" ValueChanged="Zoom_Changed" ToolTip="Zoom (Ctrl + mouse wheel on the timeline)"/>
             </StackPanel>

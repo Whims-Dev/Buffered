@@ -42,18 +42,20 @@ public static class ExportGraph
                 string tag = $"v{layer++}";
                 string fades = Fades(it, len, true);
                 bool fadingOpacity = it.Props.HasKeys(KeyProp.Opacity);
-                bool alpha = fades.Length > 0 || fadingOpacity || it.Props.Opacity < 0.999;
+                bool turned = it.Props.HasKeys(KeyProp.Rotation) || Math.Abs(it.Props.Rotation) > 0.01;
+                bool alpha = fades.Length > 0 || fadingOpacity || it.Props.Opacity < 0.999 || turned;
                 string post = fades.Length > 0 ? "," + fades : "";
                 if (fadingOpacity) post += OpacityCommands(it, o.Fps, tag);                                           // animated opacity: commands change the filter as the frames go by
                 else if (it.Props.Opacity < 0.999) post += $",colorchannelmixer=aa={N(it.Props.Opacity)}";
-                string x = PositionExpr(it, KeyProp.PosX, o.Width), y = PositionExpr(it, KeyProp.PosY, o.Height);   // where the middle of the picture goes (the keyframe times are on the timeline)
+                string x = PositionExpr(it, KeyProp.PosX, o.Width) + CropShift(it.Props, "x"), y = PositionExpr(it, KeyProp.PosY, o.Height) + CropShift(it.Props, "y");   // where the middle of the picture goes (the keyframe times are on the timeline)
 
                 if (it.Kind == ItemKind.Video)
                 {
                     inputs.AddRange(new[] { "-ss", N(it.SourceIn), "-t", N(it.SourceOut - it.SourceIn), "-i", it.Source });
                     graph.Append($"[{index}:v]setpts=(PTS-STARTPTS)/{N(it.Props.Speed)},fps={o.Fps},scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease");
+                    graph.Append(CropBy(it.Props));
                     graph.Append(ScaleBy(it, "iw", "ih", 1));                                                           // zoomed in or out; what goes past the frame is cut off by the overlay
-                    graph.Append(alpha ? ",format=yuva420p" : "").Append(post).Append($",setpts=PTS+{N(it.Start)}/TB[{tag}];");
+                    graph.Append(alpha ? ",format=yuva420p" : "").Append(RotateBy(it)).Append(post).Append($",setpts=PTS+{N(it.Start)}/TB[{tag}];");
                     graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
                 }
                 else if (it.Kind == ItemKind.Image)
@@ -61,7 +63,7 @@ public static class ExportGraph
                     if (sequenceFor?.Invoke(it) is { } sequence) inputs.AddRange(new[] { "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", sequence });
                     else inputs.AddRange(new[] { "-loop", "1", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", it.Source });
                     // a picture is 40% of the frame's width at scale 1
-                    graph.Append($"[{index}:v]").Append(ScaleBy(it, N(o.Width * 0.4), "-2", 0, firstInChain: true)).Append(",format=rgba").Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
+                    graph.Append($"[{index}:v]").Append(ScaleBy(it, N(o.Width * 0.4), "-2", 0, firstInChain: true)).Append(",format=rgba").Append(CropBy(it.Props)).Append(RotateBy(it)).Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
                     graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
                 }
                 else   // text: a tight picture of the words, drawn by the editor at its biggest size and scaled down to what each moment needs
@@ -69,7 +71,7 @@ public static class ExportGraph
                     string? png = layerFor(it);
                     if (png is null) { layer--; continue; }
                     inputs.AddRange(new[] { "-loop", "1", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-t", N(len), "-i", png });
-                    graph.Append($"[{index}:v]format=rgba").Append(TextScaleBy(it)).Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
+                    graph.Append($"[{index}:v]format=rgba").Append(TextScaleBy(it)).Append(RotateBy(it)).Append(post).Append($",setpts=PTS-STARTPTS+{N(it.Start)}/TB[{tag}];");
                     graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
                 }
                 last = $"o{layer}";
@@ -129,6 +131,37 @@ public static class ExportGraph
 
     private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
 
+    /// <summary>Cuts the edges off a picture (each is a share of its width or height). Not for text.</summary>
+    private static string CropBy(ItemProps p) => !p.HasCrop ? "" :
+        $",crop=w='trunc(iw*{N(1 - p.CropL - p.CropR)}/2)*2':h='trunc(ih*{N(1 - p.CropT - p.CropB)}/2)*2':x='iw*{N(p.CropL)}':y='ih*{N(p.CropT)}'";
+
+    /// <summary>
+    /// What to add to a picture's overlay position so that what is left after cropping stays where it was on the frame: the middle of what is left is off the middle of the
+    /// whole picture by half of the difference between the cut edges (the whole picture's size is worked out from the cropped size).
+    /// </summary>
+    private static string CropShift(ItemProps p, string axis)
+    {
+        if (!p.HasCrop) return "";
+        return axis == "x" ? $"+({N((p.CropL - p.CropR) / 2)})*overlay_w/{N(1 - p.CropL - p.CropR)}" : $"+({N((p.CropT - p.CropB) / 2)})*overlay_h/{N(1 - p.CropT - p.CropB)}";
+    }
+
+    /// <summary>
+    /// Turns a picture by the item's rotation (degrees, clockwise), leaving transparent corners. The picture is made big enough for the biggest turn it ever has, so its size stays the same
+    /// as the angle changes (it is centred when it is laid over the frame, so it turns about its middle).
+    /// </summary>
+    private static string RotateBy(TimelineItem it)
+    {
+        const double rad = Math.PI / 180;
+        var p = it.Props;
+        if (p.HasKeys(KeyProp.Rotation))
+        {
+            double biggest = p.FramesOf(KeyProp.Rotation).Max(f => Math.Abs(f.Value)) * rad;
+            return $",rotate=a='{Curve(p.FramesOf(KeyProp.Rotation), 0, rad)}':c=none:ow=rotw({N(Math.Max(0.01, biggest))}):oh=roth({N(Math.Max(0.01, biggest))})";
+        }
+        if (Math.Abs(p.Rotation) < 0.01) return "";
+        return $",rotate=a={N(p.Rotation * rad)}:c=none:ow=rotw({N(p.Rotation * rad)}):oh=roth({N(p.Rotation * rad)})";
+    }
+
     /// <summary>
     /// An expression in <c>t</c> (seconds) that follows a line between keyframes: the first value before the first keyframe, the last after the last. The keyframe times
     /// are counted from <paramref name="offset"/>, so use the item's start for a time on the timeline, or 0 for a time inside the item.
@@ -184,7 +217,13 @@ public static class ExportGraph
     }
 
     /// <summary>Filters beyond the usual ones that this particular edit needs (the video tools must have them).</summary>
-    public static IEnumerable<string> ExtraFiltersFor(Project p) => p.Items.Any(i => i.Kind != ItemKind.Audio && i.Props.HasKeys(KeyProp.Opacity)) ? new[] { "sendcmd" } : Array.Empty<string>();
+    public static IEnumerable<string> ExtraFiltersFor(Project p)
+    {
+        var picture = p.Items.Where(i => i.Kind != ItemKind.Audio).ToList();
+        if (picture.Any(i => i.Props.HasKeys(KeyProp.Opacity))) yield return "sendcmd";
+        if (picture.Any(i => i.Props.HasKeys(KeyProp.Rotation) || Math.Abs(i.Props.Rotation) > 0.01)) yield return "rotate";
+        if (picture.Any(i => i.Kind != ItemKind.Text && i.Props.HasCrop)) yield return "crop";
+    }
 
     /// <summary>The fade in and fade out of an item on its alpha channel (picture items).</summary>
     private static string Fades(TimelineItem it, double len, bool alpha)

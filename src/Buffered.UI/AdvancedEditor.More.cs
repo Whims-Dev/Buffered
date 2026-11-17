@@ -49,6 +49,31 @@ public partial class AdvancedEditor
         Focus();
     }
 
+    /// <summary>With Magnetic on, the main picture lane is kept free of gaps.</summary>
+    private Project Magnetic(Project p) => RippleToggle.IsChecked == true ? p.CloseGaps() : p;
+
+    /// <summary>Q cuts the start of the selected items off at the playhead, W the end (like dragging the edge there).</summary>
+    private void TrimToPlayhead(bool start)
+    {
+        var p = _h.Current; int n = 0;
+        foreach (var id in Tl.Selection.ToList())
+        {
+            if (p.Find(id) is not { } it || _t <= it.Start + 0.05 || _t >= it.End - 0.05) continue;
+            double limit = TimelineView.SourceLengths.TryGetValue(it.Source, out var l) ? l : double.PositiveInfinity;
+            p = p.Trim(id, start, _t, limit); n++;
+        }
+        if (n == 0) { StatusText.Text = "Select an item and put the playhead inside it first"; return; }
+        _h.Apply(Magnetic(p)); AfterEdit();
+    }
+
+    /// <summary>Up and Down move the playhead to the previous or next place where something starts or ends.</summary>
+    private void JumpToCut(bool forward)
+    {
+        var edges = _h.Current.Items.SelectMany(i => new[] { i.Start, i.End }).Concat(_h.Current.Marks).Append(0).Distinct().OrderBy(t => t).ToList();
+        double? target = forward ? edges.Where(t => t > _t + 0.02).Cast<double?>().FirstOrDefault() : edges.Where(t => t < _t - 0.02).Cast<double?>().LastOrDefault();
+        if (target is { } to) { SetTime(to, true); Tl.KeepVisible(to); }
+    }
+
     private void Snap_Click(object sender, RoutedEventArgs e) { Tl.SnapEnabled = SnapToggle.IsChecked == true; Focus(); }
 
     // ---- copy, paste, duplicate

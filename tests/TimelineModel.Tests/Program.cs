@@ -141,6 +141,32 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   Check(loaded is not null && !loaded.Project.Find(a.Id)!.Props.HasKeys(KeyProp.Speed) && loaded.Project.Find(a.Id)!.Props.HasKeys(KeyProp.Scale), "speed keyframes in an old edit are dropped and the others kept");
   Check(loaded!.Project.Find(a.Id)!.Props.Keys!.Count == 1, "(nothing about speed is left in what it keeps)"); }
 
+// Cross-dissolve
+{ var a = Clip(0, 5); var b = Clip(5, 5, srcIn: 3);                   // the second clip was cut from a longer one: it has 3 seconds of footage before its start
+  var snd = Clip(0, 5) with { Kind = ItemKind.Audio }; var snd2 = Clip(5, 5, srcIn: 3) with { Kind = ItemKind.Audio };
+  var p = Base().Add(0, a)!.Add(0, b)!.Add(2, snd)!.Add(2, snd2)!;
+  var (q, n) = p.CrossDissolveAt(5, 1);
+  var nb = q.Find(b.Id)!;
+  Check(n == 2 && Near(nb.Start, 4) && Near(nb.SourceIn, 2) && Near(nb.End, 10) && Near(nb.Props.FadeIn, 1), "the clip after the cut starts a second earlier, using footage from before its start, and fades in");
+  Check(q.Tracks.FindIndex(t => t.Items.Any(i => i.Id == b.Id)) == 0 && q.Tracks.Count == 3 || q.Tracks.FindIndex(t => t.Items.Any(i => i.Id == b.Id)) < 1, "it moves to a lane above the one it was on");
+  Check(Near(q.Find(a.Id)!.End, 5) && Near(q.Find(snd.Id)!.Props.FadeOut, 1) && Near(q.Find(snd2.Id)!.Start, 4), "the picture before carries on to the cut and its sound fades out while the new sound comes in");
+  Check(q.Items.Count() == 4, "nothing is lost or doubled");
+  var none = Base().Add(0, Clip(0, 5))!.Add(0, Clip(5, 5))!.CrossDissolveAt(5, 1);
+  Check(none.Changed == 0, "a clip with no footage before its start cannot dissolve"); }
+
+// A main lane without gaps
+{ var a = Clip(0, 5); var b = Clip(7, 3); var c = Clip(12, 2);
+  var p = Base().Add(1, a)!.Add(1, b)!.Add(1, c)!;        // the main picture lane is the lowest one: V2 (index 1)
+  var q = p.CloseGaps();
+  Check(Near(q.Find(b.Id)!.Start, 5) && Near(q.Find(c.Id)!.Start, 8) && Near(q.Find(a.Id)!.Start, 0), "gaps on the main lane close, each piece moving back against the one before");
+  var lead = Base().Add(1, Clip(3, 4))!.CloseGaps();
+  Check(Near(lead.Items.First().Start, 0), "a gap at the very start closes too");
+  var link = Guid.NewGuid(); var v = Clip(4, 3, link); var snd = Clip(4, 3, link) with { Kind = ItemKind.Audio };
+  var withSound = Base().Add(1, v)!.Add(2, snd)!.CloseGaps();
+  Check(Near(withSound.Find(v.Id)!.Start, 0) && Near(withSound.Find(snd.Id)!.Start, 0), "the sound linked to a moved picture moves with it");
+  var already = Base().Add(1, Clip(0, 3))!.Add(1, Clip(3, 3))!;
+  Check(ReferenceEquals(already.CloseGaps().Tracks, already.Tracks) || already.CloseGaps().Items.Count() == 2, "nothing changes when there are no gaps"); }
+
 // Locked track
 { var a = Clip(0, 5); var p = Base().Add(0, a)!; p = p with { Tracks = p.Tracks.SetItem(0, p.Tracks[0] with { Locked = true }) };
   Check(p.Delete(a.Id, false).Items.Count() == 1 && p.Split(a.Id, 2).Items.Count() == 1, "a locked track is left alone"); }
