@@ -11,6 +11,12 @@ public readonly record struct Packet(byte[] Data, long TimeHns, bool IsKey);
 /// Hardware H.264 encoder through the Media Foundation transform the GPU driver exposes
 /// (NVENC on NVIDIA, AMF on AMD, QSV on Intel). Takes NV12 D3D11 textures, emits Annex-B packets.
 /// </summary>
+/// <summary>No video encoder would work with the graphics chip in use (another chip in the PC might have one that does).</summary>
+internal sealed class EncoderNotUsableException : InvalidOperationException
+{
+    public EncoderNotUsableException(string message, Exception? inner) : base(message, inner) { }
+}
+
 internal sealed class HwEncoder : IDisposable
 {
     private static readonly Guid CleanPoint = new("9cdf01d8-a0f0-43ba-b077-eaa06cbd728a");
@@ -58,7 +64,7 @@ internal sealed class HwEncoder : IDisposable
         var outInfo = new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = VideoFormatGuids.H264 };
         MediaFactory.MFTEnumEx(TransformCategoryGuids.VideoEncoder,
             (uint)(EnumFlag.EnumFlagHardware | EnumFlag.EnumFlagSortandfilter), null, outInfo, out var arr, out var count);
-        if (count == 0) throw new InvalidOperationException("No hardware H.264 encoder found.");
+        if (count == 0) throw new EncoderNotUsableException("No hardware H.264 encoder found.", null);
         var activates = new IMFActivate[count];
         for (int i = 0; i < count; i++) activates[i] = new IMFActivate(Marshal.ReadIntPtr(arr, i * IntPtr.Size));
         Marshal.FreeCoTaskMem(arr);
@@ -98,7 +104,7 @@ internal sealed class HwEncoder : IDisposable
             }
         }
         if (chosen is null)
-            throw new InvalidOperationException(
+            throw new EncoderNotUsableException(
                 $"None of the video encoders found ({string.Join(", ", tried)}) would work with the graphics chip in use ({_gpu.AdapterName}): {lastFailure?.Message}", lastFailure);
         _mft = chosen;
         Name = chosenName;

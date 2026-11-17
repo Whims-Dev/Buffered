@@ -74,10 +74,10 @@ public partial class MainWindow
             GameGainNow.Text = $"Current setting: {DbText(_settings.GameGainDb)}";
             GameMicNow.Text = $"Current setting: {DbText(_settings.MicGainDb)}";
 
-            GameGainSlider2.Value = p.GameGainDb ?? _settings.GameGainDb;
+            GameGainSlider2.Value = Vol.DbToPercent(p.GameGainDb ?? _settings.GameGainDb);
             GameGainSlider2.Opacity = p.GameGainDb.HasValue ? 1 : 0.55;
             GameGainValue.Text = p.GameGainDb is { } g ? DbText(g) : "Current";
-            GameMicSlider2.Value = p.MicGainDb ?? _settings.MicGainDb;
+            GameMicSlider2.Value = Vol.DbToPercent(p.MicGainDb ?? _settings.MicGainDb);
             GameMicSlider2.Opacity = p.MicGainDb.HasValue ? 1 : 0.55;
             GameMicValue.Text = p.MicGainDb is { } m ? DbText(m) : "Current";
 
@@ -124,14 +124,14 @@ public partial class MainWindow
     private void GameGain_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_loadingGame || _selectedGame is null) return;
-        EditProfile().GameGainDb = e.NewValue;
+        EditProfile().GameGainDb = Vol.PercentToDb(e.NewValue);
         AfterGameEdit();
     }
 
     private void GameMic_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_loadingGame || _selectedGame is null) return;
-        EditProfile().MicGainDb = e.NewValue;
+        EditProfile().MicGainDb = Vol.PercentToDb(e.NewValue);
         AfterGameEdit();
     }
 

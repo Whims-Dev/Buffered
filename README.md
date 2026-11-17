@@ -10,7 +10,8 @@ A lightweight instant-replay clipper for Windows. It keeps the last few minutes 
 - **Game windows.** Add a game and Buffered records just its window instead of the whole monitor, even if you minimize it (it is restored behind your other windows). Each game can have its own quality, buffer length, volumes and clips folder.
 - **Sharing.** Make a smaller copy that fits a chat app (10, 20, 25 or 50 MB), copy the original, or post a clip straight to a Discord channel through a webhook, with a title, details and the video attached. Keep as many named, colored webhooks as you like and put them in your own order. Everything happens when you click; nothing is uploaded on its own.
 - **Folders and favorites.** Folders (each with its own color), favorites that are protected from delete, names and notes, drag-select, copy and drag a clip out.
-- **Easy settings.** Settings are split into sections with a search box, and Buffered can start with Windows and add its own shortcuts.
+- **Easy settings.** Settings are split into sections with a search box, and Buffered can start with Windows and add its own shortcuts. Volumes are plain percentages (100% is the sound as recorded).
+- **Updates when you ask.** In Settings, Updates, press Check for updates, then Download, then Restart to update. The download is checked against the hash GitHub publishes for it, the old files are put back if anything goes wrong, and nothing is checked or installed on its own.
 - **Quiet.** No Windows notifications, so it won't interfere with fullscreen games.
 - **SteamVR aware.** While SteamVR runs, it records the Steam Streaming audio devices instead.
 

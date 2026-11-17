@@ -30,6 +30,24 @@ public partial class MainWindow
         catch { return false; }
     }
 
+    /// <summary>
+    /// If "start with Windows" is on but its entry points at a copy of Buffered that is gone (the folder was moved or renamed), point it at this copy,
+    /// so the recorder keeps starting at sign-in. An entry that still points at a copy that exists is left alone.
+    /// </summary>
+    private static void FixStaleStartupEntry()
+    {
+        try
+        {
+            if (!File.Exists(RecorderExe)) return;
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+            if (key?.GetValue(RunValue) is not string current || current.Equals(StartupCommand, StringComparison.OrdinalIgnoreCase)) return;
+            var m = System.Text.RegularExpressions.Regex.Match(current, "^\"([^\"]+)\"");
+            string path = m.Success ? m.Groups[1].Value : current.Split(' ')[0];
+            if (!File.Exists(path)) key.SetValue(RunValue, StartupCommand);
+        }
+        catch { /* not worth interrupting anyone */ }
+    }
+
     private bool _refreshingGeneral;
 
     private void StartupBox_Changed(object sender, RoutedEventArgs e)

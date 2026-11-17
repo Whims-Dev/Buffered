@@ -22,7 +22,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          FFMPEG_RELEASE: ffmpeg-slim-1    # the slim build made by the "ffmpeg" workflow; change this when that is rebuilt and published again
+          FFMPEG_RELEASE: ffmpeg-slim-2   # the slim build made by the "ffmpeg" workflow; change this when that is rebuilt and published again
         run: |
           gh release download $env:FFMPEG_RELEASE --pattern ffmpeg-slim-win64.zip --repo $env:GITHUB_REPOSITORY
           $digest = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:FFMPEG_RELEASE" --jq '.assets[] | select(.name=="ffmpeg-slim-win64.zip") | .digest'
@@ -36,8 +36,16 @@ jobs:
         shell: pwsh
         run: ./scripts/publish.ps1 -FfmpegDir $env:FFMPEG_DIR
 
+      - name: Release notes (from the message of the tagged commit)
+        shell: pwsh
+        run: |
+          # The commit that is tagged says what changed in this version; the updater shows it under "What's new".
+          $lines = (git log -1 --pretty=%B) -split "`n" | Where-Object { $_ -notmatch '^Co-Authored-By:' }
+          ($lines -join "`n").Trim() | Set-Content release-notes.md -Encoding utf8
+
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/Buffered-win-x64.zip
-          generate_release_notes: true
+          body_path: release-notes.md
+          generate_release_notes: false

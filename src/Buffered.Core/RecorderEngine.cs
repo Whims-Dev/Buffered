@@ -60,7 +60,52 @@ public sealed class RecorderEngine : IDisposable
     /// <summary>The buffer length actually in use (a running game can have its own).</summary>
     public int BufferSeconds => _eff?.BufferSeconds ?? _s.BufferSeconds;
 
+    /// <summary>Said when something worth keeping in the log happens while starting (for example, trying another graphics chip).</summary>
+    public event Action<string>? Note;
+
+    /// <summary>
+    /// Starts recording on the graphics chip Windows picks. On a PC with two graphics chips, the video encoder may belong to the other one; if no
+    /// encoder works with the first chip, each of the others is tried in turn before giving up.
+    /// </summary>
     public void Start()
+    {
+        try { StartOn(-1); return; }
+        catch (EncoderNotUsableException first)
+        {
+            int count = Gpu.AdapterCount();
+            if (count < 2) throw;
+            Note?.Invoke($"no encoder works on {GpuName}: {first.Message}. Trying the other graphics chips ({count} in all).");
+            string failedChip = GpuName;
+            ResetAfterFailedStart();
+            for (int i = 0; i < count; i++)
+            {
+                try
+                {
+                    StartOn(i);
+                    if (GpuName == failedChip) { ResetAfterFailedStart(); continue; }   // the chip that was already tried
+                    Note?.Invoke($"recording on {GpuName} instead");
+                    return;
+                }
+                catch (EncoderNotUsableException ex) { Note?.Invoke($"no encoder works on chip {i + 1}: {ex.Message}"); ResetAfterFailedStart(); }
+                catch (Exception ex) { Note?.Invoke($"chip {i + 1} did not work: {ex.Message}"); ResetAfterFailedStart(); }
+            }
+            throw first;   // none of them worked: report the first problem
+        }
+    }
+
+    /// <summary>Lets go of what a start that did not finish had made, so another try begins clean.</summary>
+    private void ResetAfterFailedStart()
+    {
+        try { _pipe?.Dispose(); } catch { }
+        try { _enc?.Dispose(); } catch { }
+        try { _cap?.Dispose(); } catch { }
+        try { _gpu?.Dispose(); } catch { }
+        _pipe = null; _enc = null; _cap = null; _gpu = null; _buffer = null;
+        FallbackKey = null; SourceName = "Monitor"; SourceKey = "monitor";
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+    }
+
+    private void StartOn(int hardwareAdapter)
     {
         Monitor = Monitors.Resolve(_s.MonitorDevice);
 
@@ -73,7 +118,7 @@ public sealed class RecorderEngine : IDisposable
         _fps = Math.Min(_eff.Fps, Math.Max(Monitor.RefreshHz, 30));
 
         var timeline = _timeline = new Timeline();
-        _gpu = new Gpu();
+        _gpu = new Gpu(hardwareAdapter);
 
         // A configured game's window is recorded instead of the whole monitor (unless that game is set to keep recording the monitor).
         // A minimized window delivers no frames at all, so it is restored (behind the other windows, without taking focus) unless that is turned off.

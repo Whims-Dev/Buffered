@@ -414,7 +414,7 @@
                                         <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Game volume"/><TextBlock x:Name="GameGainStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameGainNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Button x:Name="GameGainRevert" Tag="game" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert game volume"/>
-                                            <Slider x:Name="GameGainSlider2" Width="200" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameGain_Changed" AutomationProperties.Name="Game volume for this game in decibels"/>
+                                            <Slider x:Name="GameGainSlider2" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameGain_Changed" AutomationProperties.Name="Game volume for this game as a percentage"/>
                                             <TextBlock x:Name="GameGainValue" Width="76" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Grid>
@@ -425,7 +425,7 @@
                                         <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Mic volume"/><TextBlock x:Name="GameMicStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameMicNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Button x:Name="GameMicRevert" Tag="mic" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert mic volume"/>
-                                            <Slider x:Name="GameMicSlider2" Width="200" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameMic_Changed" AutomationProperties.Name="Mic volume for this game in decibels"/>
+                                            <Slider x:Name="GameMicSlider2" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameMic_Changed" AutomationProperties.Name="Mic volume for this game as a percentage"/>
                                             <TextBlock x:Name="GameMicValue" Width="76" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Grid>
@@ -537,7 +537,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><TextBlock Text="Volume in new clips"/><TextBlock Text="Louder or quieter than it plays on your speakers" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Slider x:Name="AppGainSlider" Width="200" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="AppGain_Changed" AutomationProperties.Name="App volume in decibels"/>
+                                            <Slider x:Name="AppGainSlider" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="AppGain_Changed" AutomationProperties.Name="App volume as a percentage"/>
                                             <TextBlock x:Name="AppGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Grid>
@@ -553,8 +553,8 @@
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,330,0"><TextBlock Text="Game volume"/><TextBlock Text="Louder or quieter game sound in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="GameGainSlider" Width="230" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
-                                            ValueChanged="Gain_Changed" AutomationProperties.Name="Game volume in decibels"/>
+                                    <Slider x:Name="GameGainSlider" Width="230" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                            ValueChanged="Gain_Changed" AutomationProperties.Name="Game volume as a percentage"/>
                                     <TextBlock x:Name="GameGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                 </StackPanel>
                             </Grid>
@@ -562,8 +562,8 @@
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,330,0"><TextBlock Text="Mic volume"/><TextBlock Text="Louder or quieter microphone in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="MicGainSlider" Width="230" Minimum="-20" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
-                                            ValueChanged="Gain_Changed" AutomationProperties.Name="Microphone volume in decibels"/>
+                                    <Slider x:Name="MicGainSlider" Width="230" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                            ValueChanged="Gain_Changed" AutomationProperties.Name="Microphone volume as a percentage"/>
                                     <TextBlock x:Name="MicGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                 </StackPanel>
                             </Grid>

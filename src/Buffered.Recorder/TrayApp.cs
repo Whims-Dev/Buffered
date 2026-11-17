@@ -86,6 +86,7 @@ sealed class TrayApp : ApplicationContext
             {
                 _vrAtStart = AudioDevices.IsSteamVrRunning();
                 _engine = new RecorderEngine(_settings);
+                _engine.Note += LogLine;
                 _engine.Start();
                 _engine.NeedsRestart += reason => { LogLine($"restarting: {reason}"); if (!_paused && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
                 _error = null; _starting = false; _startAttempt = 0;

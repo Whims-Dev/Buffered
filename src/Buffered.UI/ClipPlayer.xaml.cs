@@ -78,7 +78,7 @@ public partial class ClipPlayer : UserControl
     private readonly List<UIElement[]> _faded = new();           // what dims when a track is muted
     private static readonly string[] TrackColors = { "#7FA6FF", "#9B8CF0", "#5ED0A0", "#F0A56C", "#E07FB0" };
 
-    private double[] TrackDbs => _sliders.Select(s => s.Value).ToArray();
+    private double[] TrackDbs => _sliders.Select(s => Vol.PercentToDb(s.Value)).ToArray();   // the sliders are percentages; the audio tools take decibels
     private bool[] TrackInMix => _tracks.Select((t, i) => i < _mutes.Count ? _mutes[i].IsChecked != true : t.InMix).ToArray();
     private bool AudioChanged => _stems is not null && _tracks.Count > 0 && _sliders.Count == _tracks.Count &&
         (TrackDbs.Any(d => Math.Abs(d) > 0.05) || Enumerable.Range(0, _tracks.Count).Any(i => TrackInMix[i] != _tracks[i].InMix));
@@ -123,9 +123,9 @@ public partial class ClipPlayer : UserControl
             Grid.SetColumn(mute, 2);
             head.Children.Add(name); head.Children.Add(db); head.Children.Add(mute);
 
-            var slider = new Slider { Minimum = -20, Maximum = 20, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 2, 0, 0) };
+            var slider = new Slider { Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 5, IsSnapToTickEnabled = true, Margin = new Thickness(0, 2, 0, 0) };
             SliderDrag.Attach(slider);
-            System.Windows.Automation.AutomationProperties.SetName(slider, $"{t.Name} volume in decibels");
+            System.Windows.Automation.AutomationProperties.SetName(slider, $"{t.Name} volume as a percentage");
             slider.ValueChanged += (_, _) => { if (!_loadingAudio) AudioEdited(); };
             // Checked/Unchecked rather than Click, so assistive tools that toggle the button are handled too.
             mute.Checked += (_, _) => { if (!_loadingAudio) AudioEdited(); };
@@ -141,7 +141,7 @@ public partial class ClipPlayer : UserControl
     private void ResetAudio()
     {
         _loadingAudio = true;
-        foreach (var s in _sliders) s.Value = 0;
+        foreach (var s in _sliders) s.Value = 100;
         for (int i = 0; i < _mutes.Count; i++) _mutes[i].IsChecked = !_tracks[i].InMix;
         _loadingAudio = false;
     }
@@ -292,14 +292,14 @@ public partial class ClipPlayer : UserControl
         _audioTimer.Stop(); _audioTimer.Start();
     }
 
-    private static string DbText(double v) => Math.Abs(v) < 0.05 ? "0 dB" : $"{(v > 0 ? "+" : "−")}{Math.Abs(v):0.#} dB";
+    private static bool IsChanged(double percent) => Math.Abs(percent - 100) > 0.5;
 
     private void UpdateAudioText()
     {
         for (int i = 0; i < _dbTexts.Count; i++)
         {
             bool muted = i < _mutes.Count && _mutes[i].IsChecked == true;
-            _dbTexts[i].Text = muted ? "Muted" : DbText(_sliders[i].Value);
+            _dbTexts[i].Text = muted ? "Muted" : Vol.Text(_sliders[i].Value);
             if (i < _mutes.Count)
             {
                 _mutes[i].Content = muted ? "" : "";
@@ -309,7 +309,7 @@ public partial class ClipPlayer : UserControl
             }
             if (i < _faded.Count) foreach (var el in _faded[i]) el.Opacity = muted ? 0.4 : (el == _dbTexts[i] ? 0.85 : 1);
             // A track that has been changed shows its value in the accent color.
-            _dbTexts[i].Foreground = !muted && Math.Abs(_sliders[i].Value) > 0.05 ? (Brush)FindResource("AccentTextFillColorPrimaryBrush") : (Brush)FindResource("TextFillColorPrimaryBrush");
+            _dbTexts[i].Foreground = !muted && IsChanged(_sliders[i].Value) ? (Brush)FindResource("AccentTextFillColorPrimaryBrush") : (Brush)FindResource("TextFillColorPrimaryBrush");
         }
         if (AudioHint is null) return;
         AudioHint.Text = AudioChanged
@@ -685,7 +685,7 @@ public partial class ClipPlayer : UserControl
             var parts = new List<string>();
             for (int i = 0; i < _tracks.Count; i++)
             {
-                if (Math.Abs(_sliders[i].Value) > 0.05) parts.Add($"{_tracks[i].Name} {DbText(_sliders[i].Value)}");
+                if (IsChanged(_sliders[i].Value)) parts.Add($"{_tracks[i].Name} {Vol.Text(_sliders[i].Value)}");
                 if (TrackInMix[i] != _tracks[i].InMix) parts.Add($"{_tracks[i].Name} {(TrackInMix[i] ? "unmuted" : "muted")}");
             }
             KeepText.Inlines.Add(string.Join(", ", parts));

@@ -37,6 +37,10 @@ ffmpeg-LICENSE.txt and the source code is available from those sites. Buffered o
 "@ | Set-Content (Join-Path $out 'THIRD-PARTY-NOTICES.txt') -Encoding utf8
 }
 
+# A list of every file in this version, so the next start can remove files left over from older versions that this one no longer has.
+$listed = Get-ChildItem $out -Recurse -File | Where-Object { $_.Name -ne 'files.txt' } | ForEach-Object { $_.FullName.Substring($out.Length).TrimStart([char]92) }
+$listed | Set-Content (Join-Path $out 'files.txt') -Encoding utf8
+
 $zip = Join-Path $root 'artifacts\Buffered-win-x64.zip'
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $out '*') -DestinationPath $zip

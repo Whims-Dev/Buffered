@@ -69,6 +69,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 PopulateSettings();
                 ShowUpdateResult();
+                FixStaleStartupEntry();
+                _ = Task.Run(() => { try { var (n, b) = InstallCleaner.Clean(AppContext.BaseDirectory, new[] { _settings.OutDir }.Concat(_settings.GameProfiles.Values.Select(g => g.Folder))); if (n > 0) Media.LogWindow($"removed {n} leftover files from older versions ({b / 1048576} MB)"); } catch { } });
                 CleanOrphanStems();
                 LoadClips();
                 WatchFolder();
@@ -392,8 +394,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RebuildAppChips();
         RefreshGeneral();
         TracksBox.IsChecked = _settings.SeparateTracks;
-        GameGainSlider.Value = _settings.GameGainDb;
-        MicGainSlider.Value = _settings.MicGainDb;
+        GameGainSlider.Value = Vol.DbToPercent(_settings.GameGainDb);
+        MicGainSlider.Value = Vol.DbToPercent(_settings.MicGainDb);
         UpdateGainTexts();
         SoftwareBox.IsChecked = _settings.UiSoftwareRendering;
         SplashBox.IsChecked = _settings.ShowSplash;
@@ -417,19 +419,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string HardKey() => string.Join("|", _settings.MonitorDevice, _settings.Height, _settings.Fps, _settings.BufferSeconds,
         _settings.GameAudioDevice, _settings.MicDevice, _settings.VrAutoSwitch, _settings.GameVolumeComp, _settings.OutDir, _settings.WindowApps, _settings.CompressAudioMemory, GameProfilesKey(), string.Join(",", _settings.AppTracks.Keys.OrderBy(k => k)));
 
-    private static string DbText(double v) => Math.Abs(v) < 0.05 ? "0 dB" : $"{(v > 0 ? "+" : "−")}{Math.Abs(v):0.#} dB";
+    /// <summary>Shows a stored decibel value as the percentage the sliders use.</summary>
+    private static string DbText(double db) => Vol.Text(Vol.DbToPercent(db));
 
     private void UpdateGainTexts()
     {
-        GameGainText.Text = DbText(GameGainSlider.Value);
-        MicGainText.Text = DbText(MicGainSlider.Value);
+        GameGainText.Text = Vol.Text(GameGainSlider.Value);
+        MicGainText.Text = Vol.Text(MicGainSlider.Value);
     }
 
     private void Gain_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_loading || !IsLoaded) return;
-        _settings.GameGainDb = GameGainSlider.Value;
-        _settings.MicGainDb = MicGainSlider.Value;
+        _settings.GameGainDb = Vol.PercentToDb(GameGainSlider.Value);
+        _settings.MicGainDb = Vol.PercentToDb(MicGainSlider.Value);
         UpdateGainTexts();
         ApplyText.Text = "Applying…";
         _applyTimer.Stop(); _applyTimer.Start();

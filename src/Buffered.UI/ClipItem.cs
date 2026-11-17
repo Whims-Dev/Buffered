@@ -296,22 +296,22 @@ internal static class Media
     /// How loud a clip is along its length, for the editor's timeline: the loudest sample in each of about <paramref name="buckets"/> equal slices,
     /// scaled 0 to 1. Decodes the first (mix) audio track at a low sample rate, so it is quick.
     /// </summary>
-    public static async Task<float[]?> GetPeaksAsync(string clip, int buckets = 1200)
+    public static async Task<(float[]? Peaks, float RawMax)> GetPeaksAsync(string clip, int buckets = 1200)
     {
         await Gate.WaitAsync();
         try
         {
             // The first audio track is the clip's mix; if asking for it by position fails, let ffmpeg choose.
-            var (peaks, why) = await ReadPeaksAsync(clip, buckets, new[] { "-map", "0:a:0" });
-            if (peaks is null) (peaks, why) = await ReadPeaksAsync(clip, buckets, Array.Empty<string>());
+            var (peaks, why, raw) = await ReadPeaksAsync(clip, buckets, new[] { "-map", "0:a:0" });
+            if (peaks is null) (peaks, why, raw) = await ReadPeaksAsync(clip, buckets, Array.Empty<string>());
             if (peaks is null) LogWindow($"waveform not drawn for {System.IO.Path.GetFileName(clip)}: {why}");
-            return peaks;
+            return (peaks, raw);
         }
-        catch (Exception ex) { LogWindow("waveform failed: " + ex.Message); return null; }
+        catch (Exception ex) { LogWindow("waveform failed: " + ex.Message); return (null, 0f); }
         finally { Gate.Release(); }
     }
 
-    private static async Task<(float[]? Peaks, string Why)> ReadPeaksAsync(string clip, int buckets, string[] map)
+    private static async Task<(float[]? Peaks, string Why, float Raw)> ReadPeaksAsync(string clip, int buckets, string[] map)
     {
         var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-i", clip }.Concat(map).Concat(new[] { "-vn", "-ac", "1", "-ar", "4000", "-f", "s16le", "-" })) psi.ArgumentList.Add(a);
@@ -322,8 +322,8 @@ internal static class Media
         await p.StandardOutput.BaseStream.CopyToAsync(ms);
         await p.WaitForExitAsync();
         int samples = (int)ms.Length / 2;
-        if (p.ExitCode != 0) return (null, $"ffmpeg exited with {p.ExitCode}: {(await err).Trim()}");
-        if (samples < 40) return (null, $"only {samples} samples of sound");
+        if (p.ExitCode != 0) return (null, $"ffmpeg exited with {p.ExitCode}: {(await err).Trim()}", 0f);
+        if (samples < 40) return (null, $"only {samples} samples of sound", 0f);
         buckets = Math.Min(buckets, Math.Max(20, samples / 8));   // a very short clip gets fewer, wider bars instead of none
         var bytes = ms.GetBuffer();
         var result = new float[buckets];
@@ -334,13 +334,13 @@ internal static class Media
             if (v > result[b]) result[b] = v;
         }
         float max = result.Max();
-        if (max < 0.001f) return (null, "the sound is silent");
+        if (max < 0.001f) return (null, "the sound is silent", max);
         for (int i = 0; i < buckets; i++) result[i] = (float)Math.Pow(result[i] / max, 0.6);   // quiet parts stay visible
-        return (result, "");
+        return (result, "", max);   // max: the loudest sample, 0 to 1 (1 is the loudest the format can hold)
     }
 
     /// <summary>One line in the window's small log, so a missing waveform can be traced afterwards.</summary>
-    private static void LogWindow(string text)
+    internal static void LogWindow(string text)
     {
         try
         {

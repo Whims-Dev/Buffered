@@ -13,11 +13,42 @@ internal sealed class Gpu : IDisposable
     public readonly object Lock = new();
     public readonly string AdapterName;
 
-    public Gpu()
+    /// <summary>How many hardware graphics chips Windows lists (software renderers are left out).</summary>
+    public static int AdapterCount()
+    {
+        try
+        {
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            int n = 0;
+            for (uint i = 0; factory.EnumAdapters1(i, out IDXGIAdapter1? a).Success; i++)
+            {
+                using (a) { if ((a!.Description1.Flags & AdapterFlags.Software) == 0) n++; }
+            }
+            return n;
+        }
+        catch { return 1; }
+    }
+
+    /// <summary>The graphics device. With no index, the one Windows picks; with an index, that one of the hardware chips Windows lists.</summary>
+    public Gpu(int hardwareAdapterIndex = -1)
     {
         var flags = DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport;
         var levels = new[] { FeatureLevel.Level_11_1, FeatureLevel.Level_11_0 };
-        D3D11.D3D11CreateDevice(null, DriverType.Hardware, flags, levels, out ID3D11Device? dev, out ID3D11DeviceContext? ctx).CheckError();
+        IDXGIAdapter1? chosen = null;
+        if (hardwareAdapterIndex >= 0)
+        {
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            int seen = 0;
+            for (uint i = 0; factory.EnumAdapters1(i, out IDXGIAdapter1? a).Success; i++)
+            {
+                if ((a!.Description1.Flags & AdapterFlags.Software) != 0) { a.Dispose(); continue; }
+                if (seen++ == hardwareAdapterIndex) { chosen = a; break; }
+                a.Dispose();
+            }
+            if (chosen is null) throw new InvalidOperationException($"There is no graphics chip number {hardwareAdapterIndex + 1}.");
+        }
+        ID3D11Device? dev; ID3D11DeviceContext? ctx;
+        using (chosen) D3D11.D3D11CreateDevice(chosen, chosen is null ? DriverType.Hardware : DriverType.Unknown, flags, levels, out dev, out ctx).CheckError();
         Device = dev!;
         Context = ctx!;
         using (var mt = Device.QueryInterface<ID3D11Multithread>()) mt.SetMultithreadProtected(true);

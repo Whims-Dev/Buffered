@@ -66,8 +66,8 @@ public partial class MainWindow
             AppPanelTitle.Inlines.Clear();
             AppPanelTitle.Inlines.Add(new System.Windows.Documents.Run("Settings for "));
             AppPanelTitle.Inlines.Add(new System.Windows.Documents.Run(setting.Name) { FontWeight = FontWeights.SemiBold });
-            AppGainSlider.Value = setting.GainDb;
-            AppGainText.Text = DbText(setting.GainDb);
+            AppGainSlider.Value = Vol.DbToPercent(setting.GainDb);
+            AppGainText.Text = Vol.Text(AppGainSlider.Value);
             AppMixBox.IsChecked = setting.InMix;
         }
         finally { _loadingApp = false; }
@@ -76,7 +76,7 @@ public partial class MainWindow
     private void AppGain_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_loadingApp || _selectedApp is null || !_settings.AppTracks.TryGetValue(Settings.GameKey(_selectedApp), out var s)) return;
-        s.GainDb = e.NewValue; AppGainText.Text = DbText(e.NewValue);
+        s.GainDb = Vol.PercentToDb(e.NewValue); AppGainText.Text = Vol.Text(e.NewValue);
         Setting_Changed(AppGainSlider, new RoutedEventArgs());
     }
 

@@ -28,6 +28,7 @@ public partial class ClipPlayer
     private void ResetDetail()
     {
         _peaksTried = _stripTried = false;
+        ClipWarn.Visibility = Visibility.Collapsed;
         Bar.Peaks = null; Bar.Strip = null;
         Bar.Detail = CurrentDetail;
     }
@@ -43,8 +44,13 @@ public partial class ClipPlayer
         if (Bar.WantsWave && !_peaksTried)
         {
             _peaksTried = true;
-            var peaks = await Media.GetPeaksAsync(clip.Path);
-            if (_clip == clip) Bar.Peaks = peaks;
+            var (peaks, rawMax) = await Media.GetPeaksAsync(clip.Path);
+            if (_clip == clip)
+            {
+                Bar.Peaks = peaks;
+                // A clip whose sound reaches the very top of what the format can hold is probably distorted; say so, since it is easy to miss.
+                ClipWarn.Visibility = peaks is not null && rawMax >= 0.99f ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
         if (Bar.WantsFilm && !_stripTried)
         {

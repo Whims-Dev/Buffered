@@ -349,12 +349,45 @@ try {
     $src = $tmp
     $items = @(Get-ChildItem $tmp)
     if ($items.Count -eq 1 -and $items[0].PSIsContainer) { $src = $items[0].FullName }
-    $copied = $false
-    for ($i = 0; $i -lt 5 -and -not $copied; $i++) {
-        try { Copy-Item -Path (Join-Path $src '*') -Destination $InstallDir -Recurse -Force; $copied = $true }
-        catch { Log ('copy attempt failed: ' + $_); Start-Sleep -Seconds 2 }
+    # Replace the files one by one, keeping a copy of each old file first. If any of them can't be replaced (a program locks it, a virus
+    # scanner holds it), everything already replaced is put back, so the folder never ends up half old and half new.
+    $backup = Join-Path $work 'backup'
+    if (Test-Path $backup) { Remove-Item $backup -Recurse -Force }
+    $cut = $src.TrimEnd([char]92).Length
+    $restoreProblem = $false
+    $touched = New-Object System.Collections.Generic.List[string]
+    $added = New-Object System.Collections.Generic.HashSet[string]
+    try {
+        foreach ($f in (Get-ChildItem $src -Recurse -File)) {
+            $rel = $f.FullName.Substring($cut).TrimStart([char]92)
+            $dest = Join-Path $InstallDir $rel
+            if (Test-Path $dest) {
+                $b = Join-Path $backup $rel
+                New-Item -ItemType Directory (Split-Path $b) -Force | Out-Null
+                Copy-Item $dest $b -Force
+            } else { [void]$added.Add($rel) }
+            New-Item -ItemType Directory (Split-Path $dest) -Force | Out-Null
+            $touched.Add($rel)
+            $ok = $false
+            for ($i = 0; $i -lt 5 -and -not $ok; $i++) {
+                try { Copy-Item $f.FullName $dest -Force; $ok = $true }
+                catch { Log ('copy attempt failed for ' + $rel + ': ' + $_); Start-Sleep -Seconds 2 }
+            }
+            if (-not $ok) { throw ('could not replace ' + $rel) }
+        }
+    } catch {
+        Log ('replacing files failed, putting the old ones back: ' + $_)
+        foreach ($rel in $touched) {
+            $dest = Join-Path $InstallDir $rel
+            $b = Join-Path $backup $rel
+            if (Test-Path $b) { try { Copy-Item $b $dest -Force } catch { $restoreProblem = $true; Log ('could not restore ' + $rel + ': ' + $_) } }
+            elseif ($added.Contains($rel)) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+        }
+        # the backup is kept only if something could not be put back (so it can still be recovered by hand)
+        if (-not $restoreProblem) { Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue }
+        throw ('the new files could not be put in place (' + $_.Exception.Message + '), so the previous version was put back')
     }
-    if (-not $copied) { throw 'could not copy the new files' }
+    Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue
     Log 'files replaced'
     Set-Content -Path (Join-Path $work 'result.txt') -Value ('ok|' + $Version) -Encoding UTF8
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
