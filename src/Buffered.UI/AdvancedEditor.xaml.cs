@@ -16,7 +16,7 @@ namespace Buffered.UI;
 /// </summary>
 public partial class AdvancedEditor : UserControl
 {
-    private const string Hint = "Space plays · S cuts · Delete removes · C razor · Ctrl+D duplicates · Q W trim to the playhead · Up Down jump between cuts · M marks · L loops";
+    private const string Hint = "Space plays · S cuts · Delete removes · C razor · Ctrl+D duplicates · Q W trim to the playhead · Shift+wheel scrolls the lanes · M marks · L loops";
 
     public event Action? CloseRequested;
 
@@ -523,8 +523,8 @@ public partial class AdvancedEditor : UserControl
     /// <summary>The timeline is as tall as its lanes need (and no more than about 45% of the window), so the picture gets the rest.</summary>
     private void SizeTimeline()
     {
-        double max = Math.Max(262, ActualHeight * 0.45);
-        TimelineCard.Height = Math.Clamp(Tl.DesiredHeight + 14, 262, max);
+        // a steady share of the window, whatever the lanes are doing: more or taller lanes scroll (Shift + wheel) instead of pushing the picture around
+        TimelineCard.Height = Math.Clamp(ActualHeight * 0.36, 262, 440);
     }
 
     private void UpdateScroll()

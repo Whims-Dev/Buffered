@@ -291,6 +291,12 @@ public sealed class TimelineView : FrameworkElement
             dc.DrawText(new FormattedText(glyph, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 13 * F, off ? text : dim, dpi), new Point(HeaderWidth - 52 * F, iconTop));
         }
         dc.Pop();
+        if (MaxScrollY > 0)   // more lanes than fit: a thin bar on the right shows where you are (Shift + wheel scrolls)
+        {
+            double trackH = Math.Max(0, h - RulerHeight - 6), total = LanesTotal, thumbH = Math.Max(24, trackH * trackH / Math.Max(total, 1));
+            double thumbY = RulerHeight + 3 + (trackH - thumbH) * (_scrollY / MaxScrollY);
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(110, 200, 200, 200)), null, new Rect(w - 7, thumbY, 4, thumbH), 2, 2);
+        }
         dc.DrawRectangle(laneA, null, new Rect(0, 0, HeaderWidth, RulerHeight));
 
         // playhead
@@ -732,8 +738,8 @@ public sealed class TimelineView : FrameworkElement
             PixelsPerSecond *= e.Delta > 0 ? 1.2 : 1 / 1.2;
             ScrollTime = at - (Math.Max(HeaderWidth, p.X) - HeaderWidth) / _pps;   // keep the time under the mouse where it was
         }
-        else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && MaxScrollY > 0 && p.Y > RulerHeight) { _scrollY = Math.Clamp(_scrollY - e.Delta / 120.0 * LaneBase, 0, MaxScrollY); InvalidateVisual(); }
-        else ScrollTime = _scrollT - e.Delta / 120.0 * VisibleSeconds * 0.15;
+        else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { _scrollY = Math.Clamp(_scrollY - e.Delta / 120.0 * LaneBase, 0, MaxScrollY); InvalidateVisual(); }   // Shift + wheel: up and down through the lanes
+        else ScrollTime = _scrollT - e.Delta / 120.0 * VisibleSeconds * 0.15;                                                                                            // wheel: along the time
         e.Handled = true;
     }
 
