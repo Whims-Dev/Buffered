@@ -30,7 +30,7 @@ jobs:
           $actual = (Get-FileHash ffmpeg-slim-win64.zip -Algorithm SHA256).Hash.ToLower()
           if (-not $expected -or $expected -ne $actual) { throw "ffmpeg checksum missing or wrong: '$expected' vs '$actual'" }
           Expand-Archive ffmpeg-slim-win64.zip -DestinationPath ffmpeg
-          "FFMPEG_DIR=$PWDfmpegfmpeg-slim-win64in" | Out-File $env:GITHUB_ENV -Append
+          "FFMPEG_DIR=$([IO.Path]::Combine($PWD, 'ffmpeg', 'ffmpeg-slim-win64', 'bin'))" | Out-File $env:GITHUB_ENV -Append
 
       - name: Build the zip
         shell: pwsh
