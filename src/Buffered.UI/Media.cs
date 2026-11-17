@@ -37,6 +37,17 @@ internal static class Media
         finally { Gate.Release(); }
     }
 
+    /// <summary>Saves the picture at a moment of a video as a full-size JPEG (for a freeze frame). Null if it couldn't be read.</summary>
+    public static async Task<string?> FreezeFrameAsync(string clip, double second)
+    {
+        string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered", "Freeze frames");
+        Directory.CreateDirectory(dir);
+        string path = System.IO.Path.Combine(dir, $"{System.IO.Path.GetFileNameWithoutExtension(clip)}-{second:0.00}s-{Guid.NewGuid().ToString("N")[..6]}.jpg");
+        var (code, _) = await RunAsync(Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-ss", second.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+            "-i", clip, "-frames:v", "1", "-q:v", "2", path);
+        return code == 0 && File.Exists(path) ? path : null;
+    }
+
     /// <summary>How many audio tracks a clip has.</summary>
     public static async Task<int> CountAudioStreamsAsync(string clip)
     {

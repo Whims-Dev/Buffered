@@ -236,4 +236,13 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   Check(back.Project.Find(v.Id)!.Source == @"E:\Pack\media\m1\a.mp4" && back.SourceLengths.ContainsKey(@"E:\Pack\media\m1\a.mp4"), "relative paths are found again from the edit's own folder");
   Check(file.ResolveFrom(@"E:\Pack").Project.Find(v.Id)!.Source == @"D:\clips\a.mp4", "full paths are left alone"); }
 
+// Subtitles and solo
+{ var cues = Buffered.UI.Subtitles.ParseSrt("﻿1\r\n00:00:01,500 --> 00:00:03,000\r\n<i>Hello</i>\r\nthere\r\n\r\n2\r\n00:01:00,000 --> 00:01:02,250\r\nBye\r\n");
+  Check(cues.Count == 2 && Near(cues[0].Start, 1.5) && Near(cues[0].End, 3) && cues[0].Text == "Hello\nthere" && Near(cues[1].Start, 60) && Near(cues[1].End, 62.25), "an .srt file is read (times, lines, tags dropped)");
+  var q = Base(); var snd = q.Tracks.Where(t => t.Kind == TrackKind.Audio).ToList();
+  if (snd.Count >= 2) { var solo = q.SetTrack(q.Tracks.IndexOf(snd[0]), t => t with { Solo = true });
+    Check(solo.Tracks.First(t => t.Id == snd[0].Id).IsHeardIn(solo) && !solo.Tracks.First(t => t.Id == snd[1].Id).IsHeardIn(solo), "soloing a sound lane silences the others");
+    Check(q.Tracks.First(t => t.Id == snd[1].Id).IsHeardIn(q), "with no solo every unmuted lane is heard"); }
+  var old = new ItemProps(); Check(old.Font == "Segoe UI" && old.Bold && old.Outline == 0 && old.Box is null, "text keeps its old look by default"); }
+
 Console.WriteLine(fails == 0 ? "all passed" : $"{fails} FAILED"); return fails;

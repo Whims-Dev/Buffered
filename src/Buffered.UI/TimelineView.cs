@@ -72,7 +72,7 @@ public sealed class TimelineView : FrameworkElement
     public event Action<Project>? Committed;             // when it is let go
     public event Action<Project>? CutMade;               // the razor was used
     public event Action? ViewChanged;                    // zoom or scroll changed
-    public enum LaneFlag { Lock, Mute }
+    public enum LaneFlag { Lock, Mute, Solo }
     public event Action<int, LaneFlag>? LaneFlagToggled;   // the lock or the eye / speaker in a lane's header was clicked
     public event Action<int>? RemoveLaneRequested;          // right click on a header
     public event Action<Guid>? ItemMenuRequested;           // right click on an item
@@ -287,7 +287,7 @@ public sealed class TimelineView : FrameworkElement
             var tr = _project.Tracks[i];
             double top = LaneTop(i), lh = LaneH(i);
             dc.DrawLine(new Pen(line, 1), new Point(0, top + lh), new Point(HeaderWidth, top + lh));
-            var nm = Fmt(tr.Name, 12 * F, text); nm.MaxTextWidth = HeaderWidth - 40; nm.MaxLineCount = 1; nm.Trimming = TextTrimming.CharacterEllipsis;
+            var nm = Fmt(tr.Name, 12 * F, text); nm.MaxTextWidth = Math.Max(20, HeaderWidth - (tr.Kind == TrackKind.Audio ? 96 : 66) * F); nm.MaxLineCount = 1; nm.Trimming = TextTrimming.CharacterEllipsis;
             bool roomy = lh >= 34 * F;   // a short lane shows just its name, in the middle
             dc.DrawText(nm, new Point(10, roomy ? top + 3 * F : top + (lh - nm.Height) / 2));
             if (roomy) dc.DrawText(Fmt(tr.Kind == TrackKind.Audio ? "sound" : tr.Kind == TrackKind.Text ? "text" : "picture", 10 * F, dim), new Point(10, top + 20 * F));
@@ -297,6 +297,8 @@ public sealed class TimelineView : FrameworkElement
             bool off = tr.Kind == TrackKind.Audio ? tr.Muted : tr.Hidden;
             string glyph = tr.Kind == TrackKind.Audio ? (tr.Muted ? "" : "") : (tr.Hidden ? "" : "");
             dc.DrawText(new FormattedText(glyph, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 13 * F, off ? text : dim, dpi), new Point(HeaderWidth - 52 * F, iconTop));
+            if (tr.Kind == TrackKind.Audio)   // solo: only the lanes marked S are heard
+                dc.DrawText(new FormattedText("S", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Semibold"), 12 * F, tr.Solo ? Frozen(Color.FromRgb(0xFF, 0xD8, 0x4D)) : dim, dpi), new Point(HeaderWidth - 76 * F, iconTop));
         }
         dc.Pop();
         if (MaxScrollY > 0)   // more lanes than fit: a thin bar on the right shows where you are (Shift + wheel scrolls)
@@ -578,6 +580,7 @@ public sealed class TimelineView : FrameworkElement
             int lane = LaneAt(p.Y);
             if (lane >= 0 && lane < _project.Tracks.Count && p.X > HeaderWidth - 34 * F) LaneFlagToggled?.Invoke(lane, LaneFlag.Lock);
             else if (lane >= 0 && lane < _project.Tracks.Count && p.X > HeaderWidth - 60 * F) LaneFlagToggled?.Invoke(lane, LaneFlag.Mute);
+            else if (lane >= 0 && lane < _project.Tracks.Count && _project.Tracks[lane].Kind == TrackKind.Audio && p.X > HeaderWidth - 86 * F) LaneFlagToggled?.Invoke(lane, LaneFlag.Solo);
             return;
         }
         if (p.Y < RulerHeight)

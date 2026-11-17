@@ -82,7 +82,7 @@ public static class ExportGraph
         // sound
         var sounds = new List<string>();
         int a = 0;
-        foreach (var track in p.Tracks.Where(t => t.Kind == TrackKind.Audio && !t.Muted))
+        foreach (var track in p.Tracks.Where(t => t.IsHeardIn(p)))
             foreach (var it in track.Items.OrderBy(i => i.Start))
             {
                 string? pcm = pcmFor(it);

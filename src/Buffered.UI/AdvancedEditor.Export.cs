@@ -37,7 +37,7 @@ public partial class AdvancedEditor
             }
 
             // everything the sound needs must be read first
-            var waiting = project.Items.Where(i => i.Kind == ItemKind.Audio && !project.Tracks.Any(t => t.Muted && t.Items.Contains(i)) && !_mixer.Has($"{i.Source}#{i.Stream}")).ToList();
+            var waiting = project.Items.Where(i => i.Kind == ItemKind.Audio && project.Tracks.Any(t => t.IsHeardIn(project) && t.Items.Contains(i)) && !_mixer.Has($"{i.Source}#{i.Stream}")).ToList();
             if (waiting.Count > 0) { StatusText.Text = "The sound is still being prepared: try again in a moment"; return; }
 
             // the name: what the edit is called (a clip's edit gets "(edit)" so it never looks like the original), in the folder used last time
@@ -181,13 +181,8 @@ public partial class AdvancedEditor
     {
         double k = H / Math.Max(1, Stage.Height);
         double biggest = ExportGraph.TextRenderSize(it.Props);
-        var tb = new TextBlock
-        {
-            Text = it.Props.Text ?? "", TextAlignment = TextAlignment.Center, FontWeight = FontWeights.Bold,
-            FontSize = Math.Max(4, H * biggest),
-            Effect = new DropShadowEffect { BlurRadius = 6 * k, ShadowDepth = 1 * k, Opacity = 0.75 },
-        };
-        try { tb.Foreground = (Brush)new BrushConverter().ConvertFromString(it.Props.Color)!; } catch (FormatException) { tb.Foreground = Brushes.White; }
+        var tb = new OutlinedText { Effect = new DropShadowEffect { BlurRadius = 6 * k, ShadowDepth = 1 * k, Opacity = 0.75 } };
+        tb.Style(it.Props, H * biggest);
         tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         int pad = (int)Math.Ceiling(10 * k * Math.Max(1, biggest * 12));
         int W = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Width) + 2 * pad), Hh = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Height) + 2 * pad);

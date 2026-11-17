@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\Buffered.UI\TimelineModel.cs" Link="TimelineModel.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Subtitles.cs" Link="Subtitles.cs" />
   </ItemGroup>
 
 </Project>

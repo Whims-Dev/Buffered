@@ -44,6 +44,39 @@ public partial class AdvancedEditor
             sw.MouseLeftButtonDown += (_, _) => ApplyToSelection(o => o with { Color = hex }, "colour");
             Swatches.Children.Add(sw);
         }
+        foreach (var hex in new[] { "#000000", "#FFFFFF", "#FF6B6B", "#4D9DFF", "#FFD84D" })
+            OutlineSwatches.Children.Add(Dot(hex, () => ApplyToSelection(o => o with { OutlineColor = hex, Outline = o.Outline <= 0 ? 0.06 : o.Outline }, "outline")));
+        BoxSwatches.Children.Add(Dot(null, () => ApplyToSelection(o => o with { Box = null }, "box")));
+        foreach (var hex in new[] { "#000000", "#FFFFFF", "#FF6B6B", "#4D9DFF", "#FFD84D", "#6BCB77" })
+            BoxSwatches.Children.Add(Dot(hex, () => ApplyToSelection(o => o with { Box = hex }, "box")));
+        foreach (var f in new[] { "Segoe UI", "Arial", "Arial Black", "Impact", "Comic Sans MS", "Consolas", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Bahnschrift" })
+            FontBox.Items.Add(f);
+    }
+
+    // a round colour button; no colour draws a crossed-out dot ("none")
+    private static Border Dot(string? hex, Action pick)
+    {
+        var sw = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(11), Margin = new Thickness(0, 0, 6, 6), Cursor = Cursors.Hand, ToolTip = hex ?? "No box",
+                              Background = hex is null ? Brushes.Transparent : (Brush)new BrushConverter().ConvertFromString(hex)!, BorderBrush = new SolidColorBrush(Color.FromArgb(120, 128, 128, 128)), BorderThickness = new Thickness(1),
+                              Child = hex is null ? new TextBlock { Text = "∅", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 13, Opacity = 0.7 } : null };
+        sw.MouseLeftButtonDown += (_, _) => pick();
+        return sw;
+    }
+
+    private void Font_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_uiBusy || FontBox.SelectedItem is not string f) return;
+        ApplyToSelection(o => o with { Font = f }, "font");
+    }
+
+    private void Style_Click(object sender, RoutedEventArgs e) =>
+        ApplyToSelection(o => o with { Bold = BoldBtn.IsChecked == true, Italic = ItalicBtn.IsChecked == true }, "text style");
+
+    private void Outline_Changed(object sender, RoutedEventArgs e)
+    {
+        OutlineValue.Text = OutlineSlider.Value < 0.5 ? "none" : $"{OutlineSlider.Value:0}%";
+        if (_uiBusy) return;
+        ApplyToSelection(o => o with { Outline = OutlineSlider.Value / 100 }, "outline");
     }
 
     private void FillMedia()
@@ -76,7 +109,7 @@ public partial class AdvancedEditor
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
             Multiselect = true, Title = "Import",
-            Filter = "Videos, pictures and sound|*.mp4;*.mkv;*.mov;*.webm;*.avi;*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.opus|All files|*.*",
+            Filter = "Videos, pictures, sound and subtitles|*.srt;*.mp4;*.mkv;*.mov;*.webm;*.avi;*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.opus|All files|*.*",
         };
         if (dlg.ShowDialog() != true) return;
         ImportFiles(dlg.FileNames);
@@ -86,14 +119,34 @@ public partial class AdvancedEditor
     public static bool IsMediaFile(string path)
     {
         string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
-        return ImageExt.Contains(ext) || AudioExt.Contains(ext) || ext is ".mp4" or ".mkv" or ".mov" or ".webm" or ".avi";
+        return ImageExt.Contains(ext) || AudioExt.Contains(ext) || ext is ".mp4" or ".mkv" or ".mov" or ".webm" or ".avi" or ".srt";
+    }
+
+    /// <summary>Turns a subtitle file into text items (one per line of subtitles) at the times the file gives.</summary>
+    private void ImportSubtitles(string path)
+    {
+        List<Subtitles.Cue> cues;
+        try { cues = Subtitles.ParseSrt(File.ReadAllText(path)); }
+        catch (IOException) { StatusText.Text = "Couldn't read that subtitle file"; return; }
+        if (cues.Count == 0) { StatusText.Text = "No subtitles found in that file"; return; }
+        var p = _h.Current;
+        foreach (var c in cues)
+        {
+            var props = new ItemProps(Text: c.Text, TextSize: 0.06, PosY: 0.88, Outline: 0.08);
+            p = PlaceOrCreate(p, TrackKind.Text, new TimelineItem(Guid.NewGuid(), ItemKind.Text, "", 0, c.End - c.Start, c.Start, props, null, c.Text.Replace('\n', ' ')), true, "Subtitles");
+        }
+        _h.Apply(p);
+        AfterEdit();
+        StatusText.Text = $"Added {cues.Count} subtitles from {System.IO.Path.GetFileName(path)}";
     }
 
     /// <summary>Adds files (from the Import button or dropped on the window) to the media list.</summary>
     public void ImportFiles(IEnumerable<string> files)
     {
         TabMedia.IsChecked = true;
-        foreach (var f in files.Where(f => IsMediaFile(f) && !_imported.Any(i => string.Equals(i.Path, f, StringComparison.OrdinalIgnoreCase))))
+        files = files.ToList();
+        foreach (var srt in files.Where(f => System.IO.Path.GetExtension(f).Equals(".srt", StringComparison.OrdinalIgnoreCase))) ImportSubtitles(srt);
+        foreach (var f in files.Where(f => !System.IO.Path.GetExtension(f).Equals(".srt", StringComparison.OrdinalIgnoreCase)).Where(f => IsMediaFile(f) && !_imported.Any(i => string.Equals(i.Path, f, StringComparison.OrdinalIgnoreCase))))
         {
             string ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
             var kind = ImageExt.Contains(ext) ? ItemKind.Image : AudioExt.Contains(ext) ? ItemKind.Audio : ItemKind.Video;
@@ -368,11 +421,9 @@ public partial class AdvancedEditor
             }
             if (it.Kind == ItemKind.Text)
             {
-                if (box.Child is not TextBlock tb)
-                    box.Child = tb = new TextBlock { TextAlignment = TextAlignment.Center, FontWeight = FontWeights.Bold, Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.75 } };
-                tb.Text = it.Props.Text ?? "";
-                tb.FontSize = Math.Max(4, H * it.Props.ValueAt(KeyProp.TextSize, at) * scale);
-                try { tb.Foreground = (Brush)new BrushConverter().ConvertFromString(it.Props.Color)!; } catch (FormatException) { tb.Foreground = Brushes.White; }
+                if (box.Child is not OutlinedText tb)
+                    box.Child = tb = new OutlinedText { Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.75 } };
+                tb.Style(it.Props, H * it.Props.ValueAt(KeyProp.TextSize, at) * scale);
             }
             else
             {

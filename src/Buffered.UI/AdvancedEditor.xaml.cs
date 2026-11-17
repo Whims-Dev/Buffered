@@ -63,6 +63,7 @@ public partial class AdvancedEditor : UserControl
         Tl.LaneFlagToggled += (lane, flag) =>
         {
             _h.Apply(_h.Current.SetTrack(lane, tr => flag == TimelineView.LaneFlag.Lock ? tr with { Locked = !tr.Locked }
+                : flag == TimelineView.LaneFlag.Solo ? tr with { Solo = !tr.Solo }
                 : tr.Kind == TrackKind.Audio ? tr with { Muted = !tr.Muted } : tr with { Hidden = !tr.Hidden }));
             AfterEdit();
         };
@@ -203,7 +204,7 @@ public partial class AdvancedEditor : UserControl
 
     private void PushLanesOf(Project proj)
     {
-        var lanes = proj.Tracks.Where(t => !t.Muted)
+        var lanes = proj.Tracks.Where(t => t.IsHeardIn(proj))
             .SelectMany(t => t.Items).Where(i => i.Kind == ItemKind.Audio)
             .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Props.FadeIn, i.Props.FadeOut, i.Props.HasKeys(KeyProp.Volume) ? i.Props.FramesOf(KeyProp.Volume).ToArray() : null, i.Props)).ToArray();
         _mixer.SetLanes(lanes);
@@ -361,6 +362,18 @@ public partial class AdvancedEditor : UserControl
 
     private void FitVideo_Click(object sender, RoutedEventArgs e) => ApplyToSelection(o => o with { Scale = 1, PosX = 0.5, PosY = 0.5 }, "fit");
 
+    /// <summary>Makes the selected video or picture small and puts it in a corner (or the middle) of the frame, like a facecam.</summary>
+    private void Layout_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string spot } || _selected is not { } sid || _h.Current.Find(sid) is not { } it) return;
+        double scale = it.Kind == ItemKind.Video ? 0.32 : 0.5;
+        double half = (it.Kind == ItemKind.Video ? scale : 0.4 * scale) / 2, gap = 0.02;
+        double x = spot.EndsWith('L') ? half + gap : spot.EndsWith('R') ? 1 - half - gap : 0.5;
+        double yHalf = it.Kind == ItemKind.Video ? half : half * _aspect;
+        double y = spot.StartsWith('T') ? yHalf + gap : spot.StartsWith('B') ? 1 - yHalf - gap : 0.5;
+        ApplyToSelection(o => o with { Scale = scale, PosX = x, PosY = y, Keys = o.Keys?.RemoveAll(k => k.Prop is KeyProp.Scale or KeyProp.PosX or KeyProp.PosY) }, "layout");
+    }
+
     /// <summary>Zooms the selected video until it covers the whole frame.</summary>
     private void FillVideo_Click(object sender, RoutedEventArgs e)
     {
@@ -468,9 +481,24 @@ public partial class AdvancedEditor : UserControl
         void Add(string text, Action act, bool enabled = true) { var m = new MenuItem { Header = text, IsEnabled = enabled }; m.Click += (_, _) => act(); menu.Items.Add(m); }
         Add("Unlink: separate the picture and its sound", () => Unlink_Click(this, new RoutedEventArgs()), anyLinked);
         Add("Link the selected items together", () => { _h.Apply(_h.Current.Link(chosen)); AfterEdit(); }, canLink);
+        var video = chosen.Count == 1 && p.Find(chosen[0]) is { Kind: ItemKind.Video } v && _t >= v.Start && _t < v.End ? v : null;
+        Add("Freeze frame: hold this picture for 2 seconds", () => _ = FreezeFrameAsync(video!), video is not null);
         menu.Items.Add(new Separator());
         Add("Delete", () => DeleteSelected(false));
         menu.IsOpen = true;
+    }
+
+    /// <summary>Takes the picture the playhead is on in a video and lays it over the timeline as a still for 2 seconds, the same size and place as the video.</summary>
+    private async Task FreezeFrameAsync(TimelineItem v)
+    {
+        double at = _t;
+        using var job = Job("Freezing the frame…");
+        string? jpg = await Media.FreezeFrameAsync(v.Source, v.SourceIn + v.Props.SourceAt(at - v.Start));
+        if (jpg is null) { StatusText.Text = "Couldn't take that picture from the video"; return; }
+        var props = new ItemProps(Scale: v.Props.Scale * 2.5, PosX: v.Props.PosX, PosY: v.Props.PosY, Rotation: v.Props.Rotation);   // a picture at scale 1 covers 40% of the width, so 2.5 times that fills the frame
+        var item = new TimelineItem(Guid.NewGuid(), ItemKind.Image, jpg, 0, 2, at, props, null, "Freeze frame");
+        _h.Apply(PlaceOrCreate(_h.Current, TrackKind.Video, item, true, "Overlay"));
+        AfterEdit();
     }
 
     /// <summary>The time of the cut a transition would go on: where the selected item meets another, or failing that the cut nearest the playhead.</summary>
@@ -583,6 +611,7 @@ public partial class AdvancedEditor : UserControl
         Vis(overlay || it.Kind == ItemKind.Video, PlacePanel);
         Vis(it.Kind is ItemKind.Video or ItemKind.Image, CropPanel);
         Vis(it.Kind == ItemKind.Video, FitRow);
+        Vis(it.Kind is ItemKind.Video or ItemKind.Image, LayoutLabel, LayoutRow);
         _uiBusy = true;
         try
         {
@@ -598,6 +627,8 @@ public partial class AdvancedEditor : UserControl
             RotateSlider.Value = it.Props.ValueAt(KeyProp.Rotation, at);
             CropLSlider.Value = it.Props.CropL * 100; CropTSlider.Value = it.Props.CropT * 100; CropRSlider.Value = it.Props.CropR * 100; CropBSlider.Value = it.Props.CropB * 100;
             UpdateKeyButtons(it, at);
+            FontBox.SelectedItem = it.Props.Font; BoldBtn.IsChecked = it.Props.Bold; ItalicBtn.IsChecked = it.Props.Italic;
+            OutlineSlider.Value = it.Props.Outline * 100;
             if (WordsBox.Text != (it.Props.Text ?? "") && !WordsBox.IsKeyboardFocusWithin) WordsBox.Text = it.Props.Text ?? "";
             ShowPropValues();
         }

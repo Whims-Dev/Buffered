@@ -132,6 +132,17 @@
                             <Slider x:Name="SizeSlider" Minimum="2" Maximum="30" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                             <TextBlock Text="Colour" Margin="0,0,0,6"/>
                             <WrapPanel x:Name="Swatches" Margin="0,0,0,10"/>
+                            <TextBlock Text="Font" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="FontBox" Margin="0,0,0,8" SelectionChanged="Font_Changed"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <ToggleButton x:Name="BoldBtn" Content="B" FontWeight="Bold" Width="34" Height="30" Margin="0,0,6,0" Click="Style_Click" ToolTip="Bold"/>
+                                <ToggleButton x:Name="ItalicBtn" Content="I" FontStyle="Italic" Width="34" Height="30" Click="Style_Click" ToolTip="Italic"/>
+                            </StackPanel>
+                            <DockPanel Margin="0,0,0,10"><TextBlock x:Name="OutlineValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Outline"/></DockPanel>
+                            <Slider x:Name="OutlineSlider" Minimum="0" Maximum="20" Margin="0,-6,0,6" ValueChanged="Outline_Changed"/>
+                            <WrapPanel x:Name="OutlineSwatches" Margin="0,0,0,10"/>
+                            <TextBlock Text="Background box" Margin="0,0,0,6"/>
+                            <WrapPanel x:Name="BoxSwatches" Margin="0,0,0,10"/>
                         </StackPanel>
                         <StackPanel x:Name="CropPanel" Margin="0,0,0,2">
                             <TextBlock Text="Crop" Margin="0,0,0,6"/>
@@ -149,6 +160,14 @@
                                 <Button Content="Fit in the frame" Height="30" Margin="0,0,6,0" Click="FitVideo_Click" ToolTip="Show the whole picture, with bars if its shape differs"/>
                                 <Button Content="Fill the frame" Height="30" Click="FillVideo_Click" ToolTip="Zoom in until the picture covers the whole frame (the edges are cut off)"/>
                             </StackPanel>
+                            <TextBlock x:Name="LayoutLabel" Text="Picture in picture" Margin="0,0,0,6"/>
+                            <WrapPanel x:Name="LayoutRow" Margin="0,0,0,12">
+                                <Button Content="↖" Tag="TL" Width="34" Height="30" Margin="0,0,6,6" Click="Layout_Click" ToolTip="Small, in the top left"/>
+                                <Button Content="↗" Tag="TR" Width="34" Height="30" Margin="0,0,6,6" Click="Layout_Click" ToolTip="Small, in the top right"/>
+                                <Button Content="↙" Tag="BL" Width="34" Height="30" Margin="0,0,6,6" Click="Layout_Click" ToolTip="Small, in the bottom left"/>
+                                <Button Content="↘" Tag="BR" Width="34" Height="30" Margin="0,0,6,6" Click="Layout_Click" ToolTip="Small, in the bottom right"/>
+                                <Button Content="●" Tag="C" Width="34" Height="30" Margin="0,0,6,6" Click="Layout_Click" ToolTip="Small, in the middle"/>
+                            </WrapPanel>
                             <DockPanel Margin="0,0,0,10"><Button x:Name="KeyRotate" Tag="Rotation" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="RotateValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Turn"/></DockPanel>
                             <Slider x:Name="RotateSlider" Minimum="-180" Maximum="180" TickFrequency="45" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                             <DockPanel Margin="0,0,0,10"><Button x:Name="KeyScale" Tag="Scale" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="ScaleValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Scale"/></DockPanel>

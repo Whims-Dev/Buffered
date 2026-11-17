@@ -12,7 +12,8 @@ public enum TrackKind { Video, Audio, Text }
 /// Volume is a multiplier (1 = as recorded); Opacity is 0 to 1; Speed is 1 for normal.
 /// </summary>
 public sealed record ItemProps(double Opacity = 1, double Volume = 1, double FadeIn = 0, double FadeOut = 0, double Speed = 1, string? Text = null,
-    double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null, double Rotation = 0, double CropL = 0, double CropT = 0, double CropR = 0, double CropB = 0)
+    double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null, double Rotation = 0, double CropL = 0, double CropT = 0, double CropR = 0, double CropB = 0,
+    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null)
 {
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
     public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, KeyProp.Rotation => Rotation, _ => Scale };
@@ -132,7 +133,11 @@ public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double 
 }
 
 /// <param name="HeightScale">How tall the lane is drawn compared with the normal height (1 is normal); the user drags it.</param>
-public sealed record Track(Guid Id, TrackKind Kind, string Name, ImmutableList<TimelineItem> Items, bool Locked = false, bool Muted = false, bool Hidden = false, double HeightScale = 1);
+public sealed record Track(Guid Id, TrackKind Kind, string Name, ImmutableList<TimelineItem> Items, bool Locked = false, bool Muted = false, bool Hidden = false, double HeightScale = 1, bool Solo = false)
+{
+    /// <summary>Whether this sound lane is heard: not muted, and if any lane is soloed, only soloed ones.</summary>
+    public bool IsHeardIn(Project p) => Kind == TrackKind.Audio && !Muted && (Solo || !p.Tracks.Any(t => t.Solo));
+}
 
 /// <summary>
 /// The whole edit as an unchanging value: every operation returns a new project, which is what makes undo and redo trivial (<see cref="EditHistory"/>) and the logic easy to test.
