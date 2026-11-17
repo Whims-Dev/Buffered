@@ -16,8 +16,22 @@ function Step([string]$name, [string]$exe, [string[]]$arguments, [string]$expect
     $out = & $exe @arguments 2>&1 | Out-String
     $ok = ($LASTEXITCODE -eq 0)
     if ($ok -and $expect) { $ok = Test-Path $expect -PathType Leaf; if ($ok) { $ok = (Get-Item $expect).Length -gt 0 } }
-    if ($ok) { Write-Host "ok     $name" } else { Write-Host "FAILED $name"; Write-Host $out; $script:failed += $name }
+    if ($ok) { Write-Host "ok     $name" }
+    else {
+        Write-Host "FAILED $name"; Write-Host $out
+        # run it again with detail, so the reason is in the log
+        $detail = @($arguments | ForEach-Object { if ($_ -eq 'error') { 'verbose' } else { $_ } })
+        Write-Host '--- again, in detail:'
+        (& $exe @detail 2>&1 | Out-String).Split("`n") | Select-Object -Last 40 | ForEach-Object { Write-Host $_ }
+        $script:failed += $name
+    }
 }
+
+Write-Host '--- what this build can do:'
+& $ff -hide_banner -protocols 2>&1 | Out-String | Write-Host
+& $ff -hide_banner -formats 2>&1 | Out-String | Select-String -Pattern ' mp4| matroska| image2| s16le| h264' | ForEach-Object { Write-Host $_.Line }
+& $ff -hide_banner -version 2>&1 | Select-Object -First 3 | ForEach-Object { Write-Host $_ }
+Write-Host '---'
 
 $src = "$w\test.mp4"
 # A test clip like the recorder's: 720p60 H.264 with a keyframe every 2 seconds, and AAC sound.
