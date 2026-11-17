@@ -76,6 +76,7 @@ public partial class AdvancedEditor : UserControl
             menu.Items.Add(remove);
             menu.IsOpen = true;
         };
+        Tl.ItemMenuRequested += id => ShowItemMenu();
         Tl.ViewChanged += UpdateScroll;
         Tl.SizeChanged += (_, _) => UpdateScroll();
         SizeChanged += (_, _) => UpdateScroll();
@@ -432,7 +433,7 @@ public partial class AdvancedEditor : UserControl
         var targets = Tl.Selection.Where(id => p.Find(id) is { } i && _t > i.Start && _t < i.End).ToList();
         if (Tl.Selection.Count == 0) { StatusText.Text = "Select what to cut first (the razor cuts whatever you click)"; return; }
         if (targets.Count == 0) { StatusText.Text = "Move the playhead over a selected item first"; return; }
-        foreach (var id in targets) p = p.Split(id, _t);
+        p = p.SplitMany(targets, _t);
         _h.Apply(p);
         AfterEdit();
     }
@@ -453,6 +454,23 @@ public partial class AdvancedEditor : UserControl
         var p = _h.Current;
         foreach (var id in Tl.Selection) p = p.Unlink(id);
         _h.Apply(p); AfterEdit();
+        StatusText.Text = "Unlinked: they can now be moved, cut and deleted separately";
+    }
+
+    /// <summary>The menu of an item on the timeline (right click): link and unlink, delete.</summary>
+    private void ShowItemMenu()
+    {
+        var p = _h.Current;
+        var chosen = Tl.Selection.ToList();
+        bool anyLinked = chosen.Any(i => p.Find(i)?.LinkId is not null);
+        bool canLink = chosen.Count >= 2 && chosen.Select(i => p.Find(i)?.LinkId).Distinct().Count() != 1;
+        var menu = new ContextMenu();
+        void Add(string text, Action act, bool enabled = true) { var m = new MenuItem { Header = text, IsEnabled = enabled }; m.Click += (_, _) => act(); menu.Items.Add(m); }
+        Add("Unlink: separate the picture and its sound", () => Unlink_Click(this, new RoutedEventArgs()), anyLinked);
+        Add("Link the selected items together", () => { _h.Apply(_h.Current.Link(chosen)); AfterEdit(); }, canLink);
+        menu.Items.Add(new Separator());
+        Add("Delete", () => DeleteSelected(false));
+        menu.IsOpen = true;
     }
 
     /// <summary>The time of the cut a transition would go on: where the selected item meets another, or failing that the cut nearest the playhead.</summary>

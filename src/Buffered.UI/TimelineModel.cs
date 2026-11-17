@@ -195,12 +195,11 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
 
     /// <summary>The razor: cuts one item in two at a timeline time. Only that item is cut (select the others too to cut them). Does nothing if the time is not well inside the item.
     /// The right half is not linked to anything; the left half keeps the link.</summary>
-    public Project Split(Guid id, double time)
+    public Project Split(Guid id, double time, Guid? rightLink = null)
     {
         var item = Find(id);
         if (item is null) return this;
         var p = this;
-        Guid? rightLink = null;
         foreach (var part in new[] { item })
         {
             if (time <= part.Start + MinLength || time >= part.End - MinLength) continue;
@@ -211,6 +210,25 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
             var left = part with { SourceOut = cut, Props = part.Props.Slice(0, leftLen) with { FadeOut = 0 } };
             var right = part with { Id = Guid.NewGuid(), SourceIn = cut, Start = time, Props = part.Props.Slice(leftLen, rightLen) with { FadeIn = 0 }, LinkId = rightLink };
             p = p.Replace(tr, l => l.Remove(part).Add(left).Add(right));
+        }
+        return p;
+    }
+
+    /// <summary>
+    /// Cuts several items at a time. Items that were linked (a picture and its sound) are cut as one: their left halves stay linked to each other, and their right halves are linked
+    /// to each other too (as a new group), so the two pieces each behave as a clip with its sound.
+    /// </summary>
+    public Project SplitMany(IEnumerable<Guid> ids, double time)
+    {
+        var p = this;
+        var newLinks = new Dictionary<Guid, Guid>();
+        foreach (var id in ids.ToList())
+        {
+            var item = p.Find(id);
+            if (item is null) continue;
+            Guid? rightLink = null;
+            if (item.LinkId is { } link) { if (!newLinks.TryGetValue(link, out var nl)) newLinks[link] = nl = Guid.NewGuid(); rightLink = nl; }
+            p = p.Split(id, time, rightLink);
         }
         return p;
     }
@@ -439,9 +457,11 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
         var p = this; var ids = new List<Guid>();
         if (items.Count == 0) return (p, ids);
         double first = items.Min(x => x.Item.Start);
+        var links = new Dictionary<Guid, Guid>();
         foreach (var (track, item) in items)
         {
-            var copy = item with { Id = Guid.NewGuid(), Start = Math.Max(0, at + (item.Start - first)), LinkId = null };
+            Guid? link = item.LinkId is { } old ? (links.TryGetValue(old, out var made) ? made : links[old] = Guid.NewGuid()) : null;
+            var copy = item with { Id = Guid.NewGuid(), Start = Math.Max(0, at + (item.Start - first)), LinkId = link };
             var kind = item.Kind switch { ItemKind.Audio => TrackKind.Audio, ItemKind.Text => TrackKind.Text, _ => TrackKind.Video };
             var order = new List<int>();
             if (track >= 0 && track < p.Tracks.Count && p.Tracks[track].Kind == kind) order.Add(track);
@@ -475,6 +495,27 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
     }
 
     public Project ClearKeys(Guid id, KeyProp prop) => SetProps(id, o => o.ClearKeys(prop));
+
+    /// <summary>Links items together (a picture and its sound), so they are selected, moved, cut and deleted as one.</summary>
+    public Project Link(IEnumerable<Guid> ids)
+    {
+        var set = ids.ToHashSet();
+        if (set.Count < 2) return this;
+        var link = Guid.NewGuid();
+        var p = this;
+        for (int i = 0; i < p.Tracks.Count; i++)
+            if (p.Tracks[i].Items.Any(it => set.Contains(it.Id)))
+                p = p.Replace(i, l => l.Select(it => set.Contains(it.Id) ? it with { LinkId = link } : it).ToImmutableList());
+        return p;
+    }
+
+    /// <summary>The ids of everything linked with an item, the item included (just the item when it is not linked).</summary>
+    public List<Guid> GroupOf(Guid id)
+    {
+        var item = Find(id);
+        if (item is null) return new List<Guid>();
+        return item.LinkId is { } link ? Items.Where(i => i.LinkId == link).Select(i => i.Id).ToList() : new List<Guid> { id };
+    }
 
     /// <summary>Frees an item from the ones it was linked with (a picture and its sound), without moving anything.</summary>
     public Project Unlink(Guid id)

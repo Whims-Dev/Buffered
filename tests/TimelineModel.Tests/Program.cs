@@ -167,6 +167,22 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   var already = Base().Add(1, Clip(0, 3))!.Add(1, Clip(3, 3))!;
   Check(ReferenceEquals(already.CloseGaps().Tracks, already.Tracks) || already.CloseGaps().Items.Count() == 2, "nothing changes when there are no gaps"); }
 
+// Linked groups
+{ var link = Guid.NewGuid(); var v = Clip(0, 10, link); var s1 = Clip(0, 10, link) with { Kind = ItemKind.Audio }; var s2 = Clip(0, 10, link) with { Kind = ItemKind.Audio };
+  var p = Base().Add(1, v)!.Add(2, s1)!.Add(2, s2) ?? Base().Add(1, v)!.Add(2, s1)!;
+  Check(p.GroupOf(v.Id).Count == p.Items.Count(i => i.LinkId == link) && p.GroupOf(v.Id).Contains(s1.Id), "a picture's group includes the sound linked to it");
+  var cut = p.SplitMany(p.GroupOf(v.Id), 4);
+  var rights = cut.Items.Where(i => Near(i.Start, 4)).ToList(); var lefts = cut.Items.Where(i => Near(i.Start, 0)).ToList();
+  Check(lefts.All(i => i.LinkId == link) && rights.Count == lefts.Count && rights.All(i => i.LinkId is { } l && l != link && l == rights[0].LinkId), "cutting a group cuts all of it, each half staying a linked clip of its own");
+  Check(Near(cut.Find(v.Id)!.End, 4) && cut.Items.Count() == p.Items.Count() * 2, "nothing is left uncut");
+  var freed = p.GroupOf(v.Id).Aggregate(p, (q, id) => q.Unlink(id));
+  Check(freed.GroupOf(v.Id).Count == 1, "unlinking makes each one its own");
+  var again = freed.Link(new[] { v.Id, s1.Id });
+  Check(again.GroupOf(v.Id).Count == 2 && again.Find(v.Id)!.LinkId == again.Find(s1.Id)!.LinkId && again.Find(v.Id)!.LinkId != link, "they can be linked again");
+  var (pasted, ids) = p.Paste(p.Pick(p.GroupOf(v.Id)), 20);
+  var pl = ids.Select(i => pasted.Find(i)!.LinkId).Distinct().ToList();
+  Check(ids.Count == p.GroupOf(v.Id).Count && pl.Count == 1 && pl[0] is { } nl && nl != link, "a pasted copy of a clip with its sound is a linked group of its own"); }
+
 // Locked track
 { var a = Clip(0, 5); var p = Base().Add(0, a)!; p = p with { Tracks = p.Tracks.SetItem(0, p.Tracks[0] with { Locked = true }) };
   Check(p.Delete(a.Id, false).Items.Count() == 1 && p.Split(a.Id, 2).Items.Count() == 1, "a locked track is left alone"); }

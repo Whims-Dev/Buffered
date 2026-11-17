@@ -75,6 +75,7 @@ public sealed class TimelineView : FrameworkElement
     public enum LaneFlag { Lock, Mute }
     public event Action<int, LaneFlag>? LaneFlagToggled;   // the lock or the eye / speaker in a lane's header was clicked
     public event Action<int>? RemoveLaneRequested;          // right click on a header
+    public event Action<Guid>? ItemMenuRequested;           // right click on an item
 
     /// <summary>A block shown where something is still being brought in (a large clip takes a moment), so the drop is seen at once.</summary>
     public sealed record PendingBlock(Guid Id, int Lane, double Time, double Length, string Label);
@@ -204,6 +205,13 @@ public sealed class TimelineView : FrameworkElement
                         nt.MaxTextWidth = Math.Max(1, r.Width - 12); nt.MaxLineCount = 1; nt.Trimming = TextTrimming.CharacterEllipsis;
                         dc.DrawText(nt, new Point(r.X + 6, top + 19 * F));
                     }
+                }
+                if (it.LinkId is not null && r.Width > 52 * F)   // linked to others (a picture and its sound): a small chain at the end of the item
+                {
+                    var chain = new FormattedText("\uE71B", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 11 * F, Brushes.White, dpi);
+                    double cx = Math.Min(x1, w) - 18 * F, cy = top + 4 * F;
+                    dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), null, new Rect(cx - 3, cy - 1, chain.Width + 6, chain.Height + 2), 3, 3);
+                    dc.DrawText(chain, new Point(cx, cy));
                 }
                 if (it.Props.Keys is { Count: > 0 })   // keyframes: a small diamond for each moment something is animated
                 {
@@ -550,6 +558,12 @@ public sealed class TimelineView : FrameworkElement
     {
         base.OnMouseDown(e);
         var p = e.GetPosition(this);
+        if (e.ChangedButton == MouseButton.Right && p.X >= HeaderWidth && ItemAt(p) is { } rightHit)
+        {
+            if (!_sel.Contains(rightHit.id)) { _sel.Clear(); foreach (var g in _project.GroupOf(rightHit.id)) _sel.Add(g); _selected = rightHit.id; InvalidateVisual(); SelectionChanged?.Invoke(_selected); }
+            ItemMenuRequested?.Invoke(rightHit.id);
+            return;
+        }
         if (e.ChangedButton == MouseButton.Right && p.X < HeaderWidth) { int l = LaneAt(p.Y); if (l >= 0 && l < _project.Tracks.Count) RemoveLaneRequested?.Invoke(l); return; }
         if (e.ChangedButton == MouseButton.Left && p.X < HeaderWidth && EdgeBelowLane(p) is { } edgeLane)
         {
@@ -596,13 +610,16 @@ public sealed class TimelineView : FrameworkElement
             return;
         }
         var (id, track, part) = hit.Value;
+        var group = _project.GroupOf(id);   // a picture and its sound are one: clicking either selects both
+        if (e.ChangedButton == MouseButton.Right) { return; }
         if (toggle)
         {
-            if (!_sel.Remove(id)) { _sel.Add(id); _selected = id; } else if (_selected == id) _selected = _sel.Count > 0 ? _sel.Last() : null;
+            if (_sel.Contains(id)) { foreach (var g in group) _sel.Remove(g); if (_selected is { } cur && group.Contains(cur)) _selected = _sel.Count > 0 ? _sel.Last() : null; }
+            else { foreach (var g in group) _sel.Add(g); _selected = id; }
             InvalidateVisual(); SelectionChanged?.Invoke(_selected);
             return;
         }
-        if (!_sel.Contains(id)) { _sel.Clear(); _sel.Add(id); }
+        if (!_sel.Contains(id)) { _sel.Clear(); foreach (var g in group) _sel.Add(g); }
         _selected = id; InvalidateVisual(); SelectionChanged?.Invoke(id);
         if (_project.Tracks[track].Locked) return;
 
@@ -611,7 +628,7 @@ public sealed class TimelineView : FrameworkElement
             double t = T(p.X);
             if (_project.SnapPoint(t, Within) is { } sn) t = sn;
             if (Math.Abs(t - _playhead) < Within) t = _playhead;
-            var cut = _project.Split(id, t);
+            var cut = _project.SplitMany(_project.GroupOf(id), t);
             if (!ReferenceEquals(cut, _project)) { _project = cut; InvalidateVisual(); CutMade?.Invoke(cut); }
             return;
         }
@@ -654,7 +671,8 @@ public sealed class TimelineView : FrameworkElement
             var box = new Rect(_boxFrom, _boxTo);
             var inside = _project.Tracks.SelectMany((tr, n) => tr.Items.Select(i => (i, n)))
                 .Where(x => new Rect(X(x.i.Start), LaneTop(x.n), Math.Max(1, X(x.i.End) - X(x.i.Start)), LaneH(x.n)).IntersectsWith(box)).Select(x => x.i.Id);
-            _sel.Clear(); foreach (var i in _boxBase.Where(_ => _boxAdd)) _sel.Add(i); foreach (var i in inside) _sel.Add(i);
+            _sel.Clear(); foreach (var i in _boxBase.Where(_ => _boxAdd)) _sel.Add(i);
+            foreach (var i in inside) foreach (var g in _project.GroupOf(i)) _sel.Add(g);
             _selected = _sel.Count > 0 ? _sel.Last() : null;
             InvalidateVisual();
             return;
@@ -701,6 +719,8 @@ public sealed class TimelineView : FrameworkElement
             if (b.SnapPoint(t, within, _dragId) is { } s) { t = s; _snapLine = s; }
             else if (Math.Abs(_playhead - t) <= within) { t = _playhead; _snapLine = _playhead; }
             next = b.Trim(_dragId, _drag == Drag.TrimLeft, t, SourceLength(item));
+            foreach (var other in b.GroupOf(_dragId).Where(g => g != _dragId))   // the sound linked to a picture is trimmed to the same moment
+                if (next.Find(other) is { } o) next = next.Trim(other, _drag == Drag.TrimLeft, t, SourceLength(o));
         }
         if (!ReferenceEquals(next, _project)) { _project = next; _dragChanged = true; Changing?.Invoke(next); }
         InvalidateVisual();
