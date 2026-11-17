@@ -54,15 +54,15 @@ jobs:
             --enable-gpl --disable-autodetect --disable-doc --disable-debug --disable-ffplay \
             --disable-everything \
             --enable-libx264 --enable-ffnvcodec --enable-nvenc \
-            --enable-decoder=h264,hevc,vp9,aac,mp3,mp3float,opus,flac,pcm_s16le,wrapped_avframe \
+            --enable-decoder=h264,hevc,vp9,aac,mp3,mp3float,opus,flac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8,vorbis,wrapped_avframe,png,mjpeg,bmp,gif,webp \
             --enable-encoder=libx264,h264_nvenc,aac,mjpeg,pcm_s16le \
-            --enable-parser=h264,aac,hevc,vp9,opus,mpegaudio,flac \
-            --enable-demuxer=mov,matroska,h264,pcm_s16le \
+            --enable-parser=h264,aac,hevc,vp9,opus,mpegaudio,flac,vorbis \
+            --enable-demuxer=mov,matroska,h264,pcm_s16le,image2,ogg,wav,mp3,flac,aac \
             --enable-muxer=mp4,matroska,mjpeg,image2,pcm_s16le,h264,null \
             --enable-protocol=file,pipe \
             --enable-bsf=h264_mp4toannexb,aac_adtstoasc,extract_extradata,null \
             --enable-indev=lavfi \
-            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine \
+            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine,color,overlay,fade,colorchannelmixer,pad,atempo,afade,adelay,apad \
             --pkg-config-flags=--static
           make -j"$(nproc)"
           make install
