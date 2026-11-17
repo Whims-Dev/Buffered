@@ -17,9 +17,18 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
     public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, _ => Scale };
 
-    public bool HasKeys(KeyProp p) => Keys?.Any(k => k.Prop == p && k.Frames.Count > 0) == true;
+    public bool HasKeys(KeyProp p)
+    {
+        if (Keys is null) return false;
+        foreach (var k in Keys) if (k.Prop == p && k.Frames.Count > 0) return true;   // (a plain loop: this is asked many times a second while playing)
+        return false;
+    }
 
-    public ImmutableList<Keyframe> FramesOf(KeyProp p) => Keys?.FirstOrDefault(k => k.Prop == p)?.Frames ?? ImmutableList<Keyframe>.Empty;
+    public ImmutableList<Keyframe> FramesOf(KeyProp p)
+    {
+        if (Keys is not null) foreach (var k in Keys) if (k.Prop == p) return k.Frames;
+        return ImmutableList<Keyframe>.Empty;
+    }
 
     /// <summary>
     /// The value of a property <paramref name="t"/> seconds into the item: the slider's value if it is not animated, otherwise a straight line between the two keyframes around that moment

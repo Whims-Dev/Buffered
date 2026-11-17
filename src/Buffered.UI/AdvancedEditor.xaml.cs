@@ -38,6 +38,7 @@ public partial class AdvancedEditor : UserControl
     private readonly DispatcherTimer _frameTimer = new() { Interval = TimeSpan.FromMilliseconds(130) };
     private double _lastExpected;
     private bool _deferSync, _loop;
+    private long _speedSetAt, _propsShownAt;
 
     public AdvancedEditor()
     {
@@ -273,7 +274,11 @@ public partial class AdvancedEditor : UserControl
     {
         ClockTextUpdate();
         // an animated property moves as the playhead does: keep the sliders showing its value
-        if (_selected is { } sid && _h.Current.Find(sid) is { Props.Keys: { Count: > 0 } }) ShowProps();
+        if (_selected is { } sid && _h.Current.Find(sid) is { Props.Keys: { Count: > 0 } } && (!_playing || Stopwatch.GetElapsedTime(_propsShownAt).TotalMilliseconds > 100))
+        {
+            _propsShownAt = Stopwatch.GetTimestamp();   // while playing, about ten times a second is plenty for the sliders
+            ShowProps();
+        }
     }
 
     private void ClockTextUpdate() => ClockText.Text = $"{Fmt(_t)} / {Fmt(_h.Current.Duration)}";
@@ -309,9 +314,21 @@ public partial class AdvancedEditor : UserControl
         else
         {
             double speedNow = active.Props.ValueAt(KeyProp.Speed, t - active.Start);   // follows the speed line while it plays
-            if (Math.Abs(speedNow - _lastSpeed) > (active.Props.HasKeys(KeyProp.Speed) ? 0.01 : 1e-6)) { Video.SpeedRatio = speedNow; _lastSpeed = speedNow; }
+            bool ramped = active.Props.HasKeys(KeyProp.Speed);
             double drift = Math.Abs(Video.Position.TotalSeconds - expected);
-            if (seek || (_playing && !_waiting && drift > 0.35))
+            if (!ramped)
+            {
+                if (Math.Abs(speedNow - _lastSpeed) > 1e-6) { Video.SpeedRatio = speedNow; _lastSpeed = speedNow; }
+            }
+            else if (_playing && Stopwatch.GetElapsedTime(_speedSetAt).TotalMilliseconds > 150)
+            {
+                // changing the player's speed every frame makes it stutter, so it is changed in small steps a few times a second, and nudged a little faster or slower
+                // when the picture has drifted off, which keeps it with the sound without jumping
+                double want = Math.Clamp(speedNow + (expected - Video.Position.TotalSeconds) / 0.6, 0.25, 8);
+                want = Math.Round(want / 0.1) * 0.1;
+                if (Math.Abs(want - _lastSpeed) >= 0.1) { Video.SpeedRatio = want; _lastSpeed = want; _speedSetAt = Stopwatch.GetTimestamp(); }
+            }
+            if (seek || (_playing && !_waiting && drift > (ramped ? 0.7 : 0.35)))
             {
                 try { Video.Position = TimeSpan.FromSeconds(expected); } catch (InvalidOperationException) { }
                 if (_playing) BeginWait(expected);
