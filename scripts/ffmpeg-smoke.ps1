@@ -78,6 +78,7 @@ $png = Join-Path $PSScriptRoot 'smoke.png'
 Step 'png: read a picture with transparency' $ff @('-hide_banner','-loglevel','error','-y','-loop','1','-framerate','30','-t','1','-i',$png,'-vf','format=rgba,scale=64:-2','-c:v','libx264','-pix_fmt','yuv420p',"$w\png.mp4") "$w\png.mp4"
 $moveGraph = "[0:v]trim=duration=2,setpts=PTS-STARTPTS,scale=320:180,format=yuva420p,rotate=a=0.3:c=none:ow=rotw(0.3):oh=roth(0.3),crop=iw*0.8:ih*0.8,hflip,vflip[a];[1:v]trim=duration=2,setpts=PTS-STARTPTS,scale=320:180,format=yuva420p[b];[a]scale=320:180[a2];[a2][b]xfade=transition=fade:duration=1:offset=1,format=yuv420p[vout]"
 Step 'rotate, crop, flip and cross-dissolve' $ff @('-hide_banner','-loglevel','error','-y','-i',$src,'-i',$src,'-filter_complex',$moveGraph,'-map','[vout]','-c:v','libx264','-pix_fmt','yuv420p','-t','3',"$w\move.mp4") "$w\move.mp4"
+Step 'loudness normalize' $ff @('-hide_banner','-loglevel','error','-y','-i',$src,'-vn','-af','loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000','-t','3','-f','s16le',"$w\loud.pcm") "$w\loud.pcm"
 
 # The GPU encoder has to be in the build (it can only run on a PC with an NVIDIA card).
 $enc = & $ff -hide_banner -encoders 2>&1 | Out-String

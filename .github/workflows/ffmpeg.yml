@@ -62,7 +62,7 @@ jobs:
             --enable-protocol=file,pipe \
             --enable-bsf=h264_mp4toannexb,aac_adtstoasc,extract_extradata,null \
             --enable-indev=lavfi \
-            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine,color,overlay,fade,colorchannelmixer,pad,atempo,afade,adelay,apad,sendcmd,rotate,crop,hflip,vflip,xfade,acrossfade \
+            --enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,anullsink,nullsink,aformat,format,scale,aresample,fps,tile,tpad,volume,amix,asplit,split,alimiter,atrim,trim,asetpts,setpts,testsrc2,sine,color,overlay,fade,colorchannelmixer,pad,atempo,afade,adelay,apad,sendcmd,rotate,crop,hflip,vflip,xfade,acrossfade,loudnorm \
             --pkg-config-flags=--static
           make -j"$(nproc)"
           make install

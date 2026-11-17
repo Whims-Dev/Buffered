@@ -4,7 +4,7 @@ using System.Text;
 namespace Buffered.UI;
 
 /// <summary>How the finished video should be made.</summary>
-public sealed record ExportOptions(int Width, int Height, int Fps, int Cq, int Crf, bool Gpu);
+public sealed record ExportOptions(int Width, int Height, int Fps, int Cq, int Crf, bool Gpu, bool Normalize = false);
 
 /// <summary>
 /// Turns an edit into one ffmpeg command: every picture item is scaled, faded and laid over a black picture at its time, every sound item is delayed to its time, given its volume
@@ -103,8 +103,8 @@ public static class ExportGraph
                 sounds.Add($"[{tag}]");
                 index++;
             }
-        if (sounds.Count == 1) graph.Append($";{sounds[0]}alimiter=limit=0.95,apad=whole_dur={N(total)}[aout]");
-        else if (sounds.Count > 1) graph.Append($";{string.Concat(sounds)}amix=inputs={sounds.Count}:normalize=0:duration=longest,alimiter=limit=0.95,apad=whole_dur={N(total)}[aout]");
+        if (sounds.Count == 1) graph.Append($";{sounds[0]}alimiter=limit=0.95{Loud(o)},apad=whole_dur={N(total)}[aout]");
+        else if (sounds.Count > 1) graph.Append($";{string.Concat(sounds)}amix=inputs={sounds.Count}:normalize=0:duration=longest,alimiter=limit=0.95{Loud(o)},apad=whole_dur={N(total)}[aout]");
 
         return new Plan(inputs, graph.ToString(), sounds.Count > 0, total);
     }
@@ -128,6 +128,9 @@ public static class ExportGraph
         string expr = $"({sc})*({sz})/{N(biggest)}";
         return $",scale=w='trunc(iw*({expr})/2)*2':h='trunc(ih*({expr})/2)*2':eval=frame";
     }
+
+    /// <summary>Evens out the loudness to what video sites play at (-14 LUFS), so the clip is not much quieter or louder than others.</summary>
+    private static string Loud(ExportOptions o) => o.Normalize ? ",loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000" : "";
 
     private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
 

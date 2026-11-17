@@ -76,7 +76,9 @@ public partial class AdvancedEditor
         int w, h;
         if (aspect >= 1) { h = choice.Height; w = Math.Max(2, (int)Math.Round(h * aspect / 2) * 2); }
         else { w = choice.Height; h = Math.Max(2, (int)Math.Round(w / aspect / 2) * 2); }
-        var options = new ExportOptions(w, h, choice.Fps, choice.Cq, choice.Crf, true);
+        if (choice.Normalize && await MissingFiltersAsync(new[] { "loudnorm" }) is { Count: > 0 })
+        { StatusText.Text = "This version of Buffered's video tools can't even out the loudness yet (it arrives with the next update), so it was left as it is"; choice = choice with { Normalize = false }; }
+        var options = new ExportOptions(w, h, choice.Fps, choice.Cq, choice.Crf, true, choice.Normalize);
 
         string work = Path.Combine(Path.GetTempPath(), "Buffered", "export_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
@@ -198,7 +200,7 @@ public partial class AdvancedEditor
     }
 }
 
-public sealed record ExportChoice(int Height, int Fps, int Cq, int Crf, string Path);
+public sealed record ExportChoice(int Height, int Fps, int Cq, int Crf, string Path, bool Normalize = false);
 
 /// <summary>Asks how to export: size, frame rate, quality and where to put the file.</summary>
 internal static class ExportDialog
@@ -235,6 +237,8 @@ internal static class ExportDialog
         stack.Children.Add(Label("Quality"));
         var quality = Combo("High (bigger file)", "Balanced", "Small file");
         stack.Children.Add(quality);
+        var loud = new CheckBox { Content = "Even out the loudness (like YouTube and TikTok play it)", Margin = new Thickness(0, 14, 0, 0) };
+        stack.Children.Add(loud);
         stack.Children.Add(Label("Name"));
         var name = new TextBox { Text = suggestedName, Height = 34, VerticalContentAlignment = VerticalAlignment.Center };
         stack.Children.Add(name);
@@ -270,7 +274,7 @@ internal static class ExportDialog
             if (!System.IO.Directory.Exists(folder.Text.Trim())) { MessageBox.Show(win, "Choose a folder that exists to save into.", "Export"); return; }
             if (System.IO.File.Exists(file) && MessageBox.Show(win, $"{System.IO.Path.GetFileName(file)} already exists. Replace it?", "Export", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             int[] heights = { 1080, 720, 480 }; int[] cq = { 20, 25, 31 }, crf = { 17, 21, 26 };
-            result = new ExportChoice(heights[size.SelectedIndex], fps.SelectedIndex == 0 ? 60 : 30, cq[quality.SelectedIndex], crf[quality.SelectedIndex], file);
+            result = new ExportChoice(heights[size.SelectedIndex], fps.SelectedIndex == 0 ? 60 : 30, cq[quality.SelectedIndex], crf[quality.SelectedIndex], file, loud.IsChecked == true);
             Remember(folder.Text.Trim());
             win.DialogResult = true;
         };
