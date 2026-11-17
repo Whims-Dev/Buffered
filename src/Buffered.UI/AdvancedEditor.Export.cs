@@ -93,13 +93,7 @@ public partial class AdvancedEditor
         foreach (var it in project.Items.Where(i => i.Kind == ItemKind.Image && GifAnimation.IsGif(i.Source)))
             if (GifFor(it.Source) is { } gif) sequences[it.Id] = WriteGifSequence(it, gif, choice.Fps, work);
 
-        // sound whose speed changes along the item is played out at that speed into a file of its own (ffmpeg can only change speed by a fixed amount)
-        var retimed = new Dictionary<Guid, string>();
-        foreach (var it in project.Items.Where(i => i.Kind == ItemKind.Audio && i.Props.HasKeys(KeyProp.Speed)))
-            if (_mixer.PathOf($"{it.Source}#{it.Stream}") is { } source)
-                retimed[it.Id] = await Task.Run(() => WriteRetimedSound(it, source, work));
-
-        var plan = ExportGraph.Build(project, options, i => retimed.TryGetValue(i.Id, out var r) ? r : _mixer.PathOf($"{i.Source}#{i.Stream}"), i => layers.TryGetValue(i.Id, out var p) ? p : null, _ => null,
+        var plan = ExportGraph.Build(project, options, i => _mixer.PathOf($"{i.Source}#{i.Stream}"), i => layers.TryGetValue(i.Id, out var p) ? p : null, _ => null,
             i => sequences.TryGetValue(i.Id, out var s) ? s : null);
         string temp = Path.Combine(Path.GetDirectoryName(choice.Path)!, "." + Path.GetFileNameWithoutExtension(choice.Path) + ".part.mp4");
 
@@ -156,30 +150,6 @@ public partial class AdvancedEditor
             return p.ExitCode == 0 && !cancel.IsCancellationRequested ? (true, "") : (false, err.ToString().Trim());
         }
         catch (Exception ex) { return (false, ex.Message); }
-    }
-
-    /// <summary>Plays a sound item out at the speed it has along the item and saves that as raw sound (48 kHz stereo 16-bit).</summary>
-    private static string WriteRetimedSound(TimelineItem it, string sourcePcm, string work)
-    {
-        const int rate = 48000;
-        string path = Path.Combine(work, "speed_" + it.Id.ToString("N") + ".pcm");
-        long first = (long)(it.SourceIn * rate), count = (long)Math.Ceiling((it.SourceOut - it.SourceIn) * rate) + 2;
-        var source = new byte[count * 4];
-        using (var fs = new FileStream(sourcePcm, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-        {
-            fs.Position = Math.Min(fs.Length, first * 4);
-            int got = 0; while (got < source.Length) { int n = fs.Read(source, got, source.Length - got); if (n <= 0) break; got += n; }
-        }
-        long frames = (long)Math.Ceiling(it.Length * rate);
-        using var output = new BufferedStream(File.Create(path), 1 << 20);
-        var frame = new byte[4];
-        for (long n = 0; n < frames; n++)
-        {
-            long at = Math.Clamp((long)((it.Props.SourceAt(n / (double)rate)) * rate), 0, count - 1);   // the source frame heard at this moment
-            Buffer.BlockCopy(source, (int)(at * 4), frame, 0, 4);
-            output.Write(frame, 0, 4);
-        }
-        return path;
     }
 
     private static string WriteGifSequence(TimelineItem it, GifAnimation gif, int fps, string work)

@@ -38,7 +38,7 @@ public partial class AdvancedEditor : UserControl
     private readonly DispatcherTimer _frameTimer = new() { Interval = TimeSpan.FromMilliseconds(130) };
     private double _lastExpected;
     private bool _deferSync, _loop;
-    private long _speedSetAt, _propsShownAt;
+    private long _propsShownAt;
 
     public AdvancedEditor()
     {
@@ -313,22 +313,9 @@ public partial class AdvancedEditor : UserControl
         }
         else
         {
-            double speedNow = active.Props.ValueAt(KeyProp.Speed, t - active.Start);   // follows the speed line while it plays
-            bool ramped = active.Props.HasKeys(KeyProp.Speed);
+            if (Math.Abs(active.Props.Speed - _lastSpeed) > 1e-6) { Video.SpeedRatio = active.Props.Speed; _lastSpeed = active.Props.Speed; }
             double drift = Math.Abs(Video.Position.TotalSeconds - expected);
-            if (!ramped)
-            {
-                if (Math.Abs(speedNow - _lastSpeed) > 1e-6) { Video.SpeedRatio = speedNow; _lastSpeed = speedNow; }
-            }
-            else if (_playing && Stopwatch.GetElapsedTime(_speedSetAt).TotalMilliseconds > 150)
-            {
-                // changing the player's speed every frame makes it stutter, so it is changed in small steps a few times a second, and nudged a little faster or slower
-                // when the picture has drifted off, which keeps it with the sound without jumping
-                double want = Math.Clamp(speedNow + (expected - Video.Position.TotalSeconds) / 0.6, 0.25, 8);
-                want = Math.Round(want / 0.1) * 0.1;
-                if (Math.Abs(want - _lastSpeed) >= 0.1) { Video.SpeedRatio = want; _lastSpeed = want; _speedSetAt = Stopwatch.GetTimestamp(); }
-            }
-            if (seek || (_playing && !_waiting && drift > (ramped ? 0.7 : 0.35)))
+            if (seek || (_playing && !_waiting && drift > 0.35))
             {
                 try { Video.Position = TimeSpan.FromSeconds(expected); } catch (InvalidOperationException) { }
                 if (_playing) BeginWait(expected);
@@ -559,7 +546,7 @@ public partial class AdvancedEditor : UserControl
             OpacitySlider.Value = it.Props.ValueAt(KeyProp.Opacity, at) * 100;
             VolumeSlider.Value = it.Props.ValueAt(KeyProp.Volume, at) * 100;
             FadeInSlider.Value = it.Props.FadeIn; FadeOutSlider.Value = it.Props.FadeOut;
-            SpeedSlider.Value = it.Props.ValueAt(KeyProp.Speed, at);
+            SpeedSlider.Value = it.Props.Speed;
             SizeSlider.Value = it.Props.ValueAt(KeyProp.TextSize, at) * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
             PosXSlider.Value = it.Props.ValueAt(KeyProp.PosX, at) * 100; PosYSlider.Value = it.Props.ValueAt(KeyProp.PosY, at) * 100;
             UpdateKeyButtons(it, at);
@@ -592,7 +579,7 @@ public partial class AdvancedEditor : UserControl
         {
             if (animated is { } kp && next.Find(id) is { } target && target.Props.HasKeys(kp))
             {
-                next = next.SetKey(id, kp, _t, kp == KeyProp.Speed ? ((Slider)sender).Value : ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
+                next = next.SetKey(id, kp, _t, ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
                 continue;
             }
             next = next.SetProps(id, o =>

@@ -19,14 +19,14 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
 
     public bool HasKeys(KeyProp p)
     {
-        if (Keys is null) return false;
+        if (Keys is null || p == KeyProp.Speed) return false;   // speed is no longer animated (see KeyProp.Speed)
         foreach (var k in Keys) if (k.Prop == p && k.Frames.Count > 0) return true;   // (a plain loop: this is asked many times a second while playing)
         return false;
     }
 
     public ImmutableList<Keyframe> FramesOf(KeyProp p)
     {
-        if (Keys is not null) foreach (var k in Keys) if (k.Prop == p) return k.Frames;
+        if (Keys is not null && p != KeyProp.Speed) foreach (var k in Keys) if (k.Prop == p) return k.Frames;
         return ImmutableList<Keyframe>.Empty;
     }
 
@@ -62,6 +62,7 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
     /// <summary>Puts a keyframe in (or changes the one that is already within a few hundredths of a second of that time).</summary>
     public ItemProps WithKey(KeyProp p, double time, double value)
     {
+        if (p == KeyProp.Speed) return this;
         var f = FramesOf(p);
         int near = f.FindIndex(k => Math.Abs(k.Time - time) < 0.03);
         var key = new Keyframe(near >= 0 ? f[near].Time : time, Limit(p, value));
@@ -77,46 +78,11 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
 
     public ItemProps ClearKeys(KeyProp p) => WithFrames(p, ImmutableList<Keyframe>.Empty);
 
-    /// <summary>How the speed changes along an item, as the times where it bends (from the start, in seconds) with the speed at each.</summary>
-    private List<(double T, double V)> SpeedPoints(double upTo)
-    {
-        var points = new List<(double, double)> { (0, ValueAt(KeyProp.Speed, 0)) };
-        foreach (var f in FramesOf(KeyProp.Speed)) if (f.Time > 1e-9 && f.Time < upTo - 1e-9) points.Add((f.Time, f.Value));
-        points.Add((upTo, ValueAt(KeyProp.Speed, upTo)));
-        return points;
-    }
-
-    /// <summary>How many seconds of the source have been played <paramref name="t"/> seconds into the item (the area under the speed line). With a steady speed this is just speed times time.</summary>
-    public double SourceAt(double t)
-    {
-        if (!HasKeys(KeyProp.Speed) || t <= 0) return (HasKeys(KeyProp.Speed) ? ValueAt(KeyProp.Speed, 0) : Speed) * t;
-        var pts = SpeedPoints(t);
-        double total = 0;
-        for (int i = 1; i < pts.Count; i++) total += (pts[i - 1].V + pts[i].V) / 2 * (pts[i].T - pts[i - 1].T);
-        return total;
-    }
+    /// <summary>How many seconds of the source have been played <paramref name="t"/> seconds into the item.</summary>
+    public double SourceAt(double t) => Speed * t;
 
     /// <summary>The opposite of <see cref="SourceAt"/>: how many seconds into the item <paramref name="source"/> seconds of the source have been played.</summary>
-    public double OutAt(double source)
-    {
-        if (!HasKeys(KeyProp.Speed)) return source / Math.Max(0.01, Speed);
-        var frames = FramesOf(KeyProp.Speed);
-        double a = 0, va = ValueAt(KeyProp.Speed, 0), played = 0;
-        foreach (var next in frames.Select(f => f.Time).Where(t => t > 1e-9).Append(double.PositiveInfinity))
-        {
-            if (double.IsPositiveInfinity(next))   // after the last keyframe the speed stays the same
-                return a + (source - played) / Math.Max(0.01, va);
-            double vb = ValueAt(KeyProp.Speed, next), span = next - a, area = (va + vb) / 2 * span;
-            if (played + area >= source)
-            {
-                double extra = source - played, k = (vb - va) / span;
-                double tau = Math.Abs(k) < 1e-9 ? extra / Math.Max(0.01, va) : (-va + Math.Sqrt(Math.Max(0, va * va + 2 * k * extra))) / k;
-                return a + Math.Clamp(tau, 0, span);
-            }
-            played += area; a = next; va = vb;
-        }
-        return a;
-    }
+    public double OutAt(double source) => source / Math.Max(0.01, Speed);
 
     /// <summary>The keyframes of the part of an item that starts <paramref name="from"/> seconds in and is <paramref name="length"/> seconds long, with times counted from its new start.</summary>
     public ItemProps Slice(double from, double length)
@@ -139,7 +105,13 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
 }
 
 /// <summary>A property that can change over the time an item is on the timeline.</summary>
-public enum KeyProp { Opacity, Volume, PosX, PosY, Scale, Speed, TextSize }
+public enum KeyProp
+{
+    Opacity, Volume, PosX, PosY, Scale,
+    /// <summary>Not animated any more (the time stretching made keyframes drift); kept only so edits saved while it existed still open. Its keyframes are dropped on opening.</summary>
+    Speed,
+    TextSize,
+}
 
 /// <summary>A value a property has at a moment, counted in seconds from the start of the item.</summary>
 public sealed record Keyframe(double Time, double Value);
@@ -457,7 +429,7 @@ public sealed record ProjectFile(int Version, string Name, double Aspect, Projec
     /// <summary>Reads a saved edit; null if the text is not one.</summary>
     public static ProjectFile? FromJson(string json)
     {
-        try { var f = JsonSerializer.Deserialize<ProjectFile>(json, Options); return f is { Project: not null } ? f : null; }
+        try { var f = JsonSerializer.Deserialize<ProjectFile>(json, Options); return f is { Project: not null } ? f.WithoutSpeedKeys() : null; }
         catch (JsonException) { return null; }
     }
 
@@ -476,6 +448,24 @@ public sealed record ProjectFile(int Version, string Name, double Aspect, Projec
 
     /// <summary>Turns the file paths that are relative (as in a portable edit) into full paths, counting from the folder the edit file is in.</summary>
     public ProjectFile ResolveFrom(string folder) => MapSources(s => System.IO.Path.IsPathRooted(s) ? s : System.IO.Path.GetFullPath(System.IO.Path.Combine(folder, s)));
+
+    /// <summary>The same edit without speed keyframes (edits saved while speed could be animated: the speed stays at its plain value).</summary>
+    public ProjectFile WithoutSpeedKeys()
+    {
+        if (!Project.Items.Any(i => i.Props.Keys is { } ks && ks.Any(k => k.Prop == KeyProp.Speed))) return this;
+        return this with
+        {
+            Project = Project with
+            {
+                Tracks = Project.Tracks.Select(t => t with
+                {
+                    Items = t.Items.Select(i => i.Props.Keys is { } ks && ks.Any(k => k.Prop == KeyProp.Speed)
+                        ? i with { Props = i.Props with { Keys = ks.Where(k => k.Prop != KeyProp.Speed).ToImmutableList() is { Count: > 0 } kept ? kept : null } }
+                        : i).ToImmutableList(),
+                }).ToImmutableList(),
+            },
+        };
+    }
 
     /// <summary>The files an edit uses that no longer exist.</summary>
     public IEnumerable<string> MissingFiles() =>

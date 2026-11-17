@@ -51,8 +51,7 @@ public static class ExportGraph
                 if (it.Kind == ItemKind.Video)
                 {
                     inputs.AddRange(new[] { "-ss", N(it.SourceIn), "-t", N(it.SourceOut - it.SourceIn), "-i", it.Source });
-                    string retime = it.Props.HasKeys(KeyProp.Speed) ? $"setpts='{SpeedSetpts(it.Props)}'" : $"setpts=(PTS-STARTPTS)/{N(it.Props.Speed)}";
-                    graph.Append($"[{index}:v]{retime},fps={o.Fps},scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease");
+                    graph.Append($"[{index}:v]setpts=(PTS-STARTPTS)/{N(it.Props.Speed)},fps={o.Fps},scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease");
                     graph.Append(ScaleBy(it, "iw", "ih", 1));                                                           // zoomed in or out; what goes past the frame is cut off by the overlay
                     graph.Append(alpha ? ",format=yuva420p" : "").Append(post).Append($",setpts=PTS+{N(it.Start)}/TB[{tag}];");
                     graph.Append($"[{last}][{tag}]overlay=x={x}-overlay_w/2:y={y}-overlay_h/2:eof_action=pass:format=auto[o{layer}];");
@@ -87,11 +86,10 @@ public static class ExportGraph
                 string? pcm = pcmFor(it);
                 if (pcm is null) continue;
                 double len = it.Length;
-                bool remapped = it.Props.HasKeys(KeyProp.Speed);   // the editor has already made a copy of the sound played at the changing speed
-                inputs.AddRange(new[] { "-f", "s16le", "-ar", "48000", "-ac", "2", "-ss", remapped ? "0" : N(it.SourceIn), "-t", remapped ? N(len) : N(it.SourceOut - it.SourceIn), "-i", pcm });
+                inputs.AddRange(new[] { "-f", "s16le", "-ar", "48000", "-ac", "2", "-ss", N(it.SourceIn), "-t", N(it.SourceOut - it.SourceIn), "-i", pcm });
                 string tag = $"a{a++}";
                 var chain = new StringBuilder($"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo");
-                if (!remapped) foreach (var t in TempoSteps(it.Props.Speed)) chain.Append($",atempo={N(t)}");
+                foreach (var t in TempoSteps(it.Props.Speed)) chain.Append($",atempo={N(t)}");
                 if (it.Props.HasKeys(KeyProp.Volume)) chain.Append($",volume=volume='{Curve(it.Props.FramesOf(KeyProp.Volume), 0)}':eval=frame");   // animated volume: a line between the keyframes, worked out as the sound goes by
                 else if (Math.Abs(it.Props.Volume - 1) > 0.001) chain.Append($",volume={N(it.Props.Volume)}");
                 if (it.Props.FadeIn > 0.001) chain.Append($",afade=t=in:st=0:d={N(it.Props.FadeIn)}");
@@ -127,30 +125,6 @@ public static class ExportGraph
         string sz = p.HasKeys(KeyProp.TextSize) ? Curve(p.FramesOf(KeyProp.TextSize), 0) : N(p.TextSize);
         string expr = $"({sc})*({sz})/{N(biggest)}";
         return $",scale=w='trunc(iw*({expr})/2)*2':h='trunc(ih*({expr})/2)*2':eval=frame";
-    }
-
-    /// <summary>
-    /// The new time of each frame when the speed changes along the item. The speed line is straight between keyframes, so the source played is a curve: this works out, for the
-    /// time of a frame in the source, when it is shown in the item.
-    /// </summary>
-    private static string SpeedSetpts(ItemProps p)
-    {
-        var times = new List<double> { 0 }; var speeds = new List<double> { p.ValueAt(KeyProp.Speed, 0) };
-        foreach (var f in p.FramesOf(KeyProp.Speed).Where(k => k.Time > 1e-9)) { times.Add(f.Time); speeds.Add(f.Value); }
-        var played = new List<double> { 0 };                                      // how much source has gone by at each of those times
-        for (int i = 1; i < times.Count; i++) played.Add(played[i - 1] + (speeds[i - 1] + speeds[i]) / 2 * (times[i] - times[i - 1]));
-        const string x = "((PTS-STARTPTS)*TB)";                                     // seconds of source into the item's part of the file
-        int n = times.Count - 1;
-        string expr = $"{N(times[n])}+({x}-{N(played[n])})/{N(speeds[n])}";      // after the last keyframe the speed stays the same
-        for (int i = n - 1; i >= 0; i--)
-        {
-            double dt = times[i + 1] - times[i], a = (speeds[i + 1] - speeds[i]) / dt;
-            string seg = Math.Abs(a) < 1e-9
-                ? $"{N(times[i])}+({x}-{N(played[i])})/{N(speeds[i])}"
-                : $"{N(times[i])}+(sqrt({N(speeds[i] * speeds[i])}+2*({N(a)})*({x}-{N(played[i])}))-{N(speeds[i])})/({N(a)})";
-            expr = $"if(lt({x},{N(played[i + 1])}),{seg},{expr})";
-        }
-        return $"({expr})/TB";
     }
 
     private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);

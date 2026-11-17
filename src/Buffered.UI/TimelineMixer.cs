@@ -133,12 +133,9 @@ internal sealed class TimelineMixer : IWaveProvider, IDisposable
                 int f0 = (int)Math.Max(0, Math.Ceiling((lane.Start - t0) * Rate));
                 int f1 = (int)Math.Min(frames, Math.Floor((end - t0) * Rate));
                 if (f1 <= f0) continue;
-                double atStart = t0 + f0 / (double)Rate - lane.Start, atEnd = t0 + f1 / (double)Rate - lane.Start;   // seconds into the item at the first and last frame
-                bool ramped = lane.Props is { } pr && pr.HasKeys(KeyProp.Speed);
-                double srcStart = lane.SourceIn + (ramped ? lane.Props!.SourceAt(atStart) : atStart * lane.Speed);      // source seconds at the first frame
-                double speedHere = ramped ? lane.Props!.ValueAt(KeyProp.Speed, atStart) : lane.Speed, speedLater = ramped ? lane.Props!.ValueAt(KeyProp.Speed, atEnd) : lane.Speed;
+                double srcStart = lane.SourceIn + (t0 + f0 / (double)Rate - lane.Start) * lane.Speed;      // source seconds at the first frame
                 long srcFrame0 = (long)(srcStart * Rate);
-                int need = (int)Math.Ceiling((f1 - f0) * Math.Max(speedHere, speedLater)) + 2;
+                int need = (int)Math.Ceiling((f1 - f0) * lane.Speed) + 2;
                 int bytes = need * 4;
                 if (_scratch.Length < bytes) _scratch = new byte[bytes];
                 int got = 0;
@@ -157,7 +154,7 @@ internal sealed class TimelineMixer : IWaveProvider, IDisposable
                 float step = (g1 - g0) / Math.Max(1, f1 - f0);
                 for (int f = f0; f < f1; f++)
                 {
-                    int s = speedHere == 1 ? f - f0 : (int)((f - f0) * speedHere);
+                    int s = lane.Speed == 1 ? f - f0 : (int)((f - f0) * lane.Speed);
                     float g = (g0 + step * (f - f0)) / 32768f;
                     outSpan[f * 2] += s16[s * 2] * g;
                     outSpan[f * 2 + 1] += s16[s * 2 + 1] * g;

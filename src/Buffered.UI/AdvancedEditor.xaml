@@ -122,7 +122,7 @@
                         <Slider x:Name="FadeInSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel Margin="0,0,0,10"><TextBlock x:Name="FadeOutValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade out"/></DockPanel>
                         <Slider x:Name="FadeOutSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                        <DockPanel x:Name="SpeedRow" Margin="0,0,0,10"><Button x:Name="KeySpeed" Tag="Speed" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="SpeedValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Speed"/></DockPanel>
+                        <DockPanel x:Name="SpeedRow" Margin="0,0,0,10"><TextBlock x:Name="SpeedValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Speed"/></DockPanel>
                         <Slider x:Name="SpeedSlider" Minimum="0.25" Maximum="4" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <StackPanel x:Name="WordsPanel">
                             <TextBlock Text="Words" Margin="0,0,0,4"/>

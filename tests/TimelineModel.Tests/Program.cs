@@ -131,24 +131,15 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   var back = ProjectFile.FromJson(new ProjectFile(1, "k", 1.7, k, new()).ToJson());
   Check(back is not null && back.Project.Find(a.Id)!.Props.FramesOf(KeyProp.PosX).Count == 2, "keyframes are saved with the edit"); }
 
-// Animated speed
+// Speed is not animated: the plain speed stays, and speed keyframes in an old edit are dropped when it is opened
 { var a = Clip(0, 10); var p = Base().Add(0, a)!;
-  var k = p.SetKey(a.Id, KeyProp.Speed, 0, 1);                      // at the start the speed is 1 and it is 1 (a keyframe with a value)
-  var steady = a.Props;
-  Check(Near(steady.SourceAt(4), 4) && Near(steady.OutAt(4), 4), "with a steady speed, source time and item time are the same");
-  var fast = new ItemProps(Speed: 2);
-  Check(Near(fast.SourceAt(3), 6) && Near(fast.OutAt(6), 3), "twice as fast covers twice the source");
-  // speed 1 at the start rising to 3 at 4 seconds, then staying at 3
-  var ramp = new ItemProps().WithKey(KeyProp.Speed, 0, 1).WithKey(KeyProp.Speed, 4, 3);
-  Check(Near(ramp.SourceAt(4), 8) && Near(ramp.SourceAt(6), 14) && Near(ramp.SourceAt(2), 3), "the source played is the area under the speed line");
-  Check(Near(ramp.OutAt(8), 4) && Near(ramp.OutAt(14), 6) && Near(ramp.OutAt(3), 2), "and the opposite way round agrees");
-  var ramped = a with { Props = ramp, SourceOut = 14 };
-  Check(Near(ramped.Length, 6), "an item with a speed ramp is as long as it takes to play its source");
-  var pr = Base().Add(0, ramped)!;
-  var cut = pr.Split(ramped.Id, 4).Tracks[0].Items;
-  Check(Near(cut[0].SourceOut, 8) && Near(cut[0].Length, 4) && Near(cut[1].SourceIn, 8) && Near(cut[1].Length, 2), "cutting an item with a speed ramp splits the source where the cut falls");
-  var tr = pr.Trim(ramped.Id, false, 3).Find(ramped.Id)!;
-  Check(Near(tr.SourceOut, ramp.SourceAt(3)) && Near(tr.Length, 3), "trimming the end keeps the speed line"); }
+  var steady = new ItemProps(Speed: 2);
+  Check(Near(steady.SourceAt(3), 6) && Near(steady.OutAt(6), 3), "twice as fast covers twice the source");
+  Check(!new ItemProps().WithKey(KeyProp.Speed, 0, 3).HasKeys(KeyProp.Speed), "a speed keyframe cannot be made any more");
+  string old = new ProjectFile(1, "old", 1.7, p, new()).ToJson().Replace("\"Keys\": null", "\"Keys\": [ { \"Prop\": \"Speed\", \"Frames\": [ { \"Time\": 0, \"Value\": 1 }, { \"Time\": 2, \"Value\": 3 } ] }, { \"Prop\": \"Scale\", \"Frames\": [ { \"Time\": 0, \"Value\": 1 } ] } ]");
+  var loaded = ProjectFile.FromJson(old);
+  Check(loaded is not null && !loaded.Project.Find(a.Id)!.Props.HasKeys(KeyProp.Speed) && loaded.Project.Find(a.Id)!.Props.HasKeys(KeyProp.Scale), "speed keyframes in an old edit are dropped and the others kept");
+  Check(loaded!.Project.Find(a.Id)!.Props.Keys!.Count == 1, "(nothing about speed is left in what it keeps)"); }
 
 // Locked track
 { var a = Clip(0, 5); var p = Base().Add(0, a)!; p = p with { Tracks = p.Tracks.SetItem(0, p.Tracks[0] with { Locked = true }) };
