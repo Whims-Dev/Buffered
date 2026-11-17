@@ -68,6 +68,7 @@ public partial class ClipPlayer : UserControl
     private readonly DispatcherTimer _audioTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private string? _stems;                       // the clip's companion file, if it has one
     private bool _loadingAudio;
+    private bool _audioResume;   // playing was paused while the new sound is built, and should carry on afterwards
     private (double Pos, bool Playing)? _resume;  // where to carry on after the source is swapped for a new preview
 
     // One row per track of the companion file (Game, a program such as Discord, Mic): a volume slider and a mute button.
@@ -263,12 +264,13 @@ public partial class ClipPlayer : UserControl
     {
         if (_clip is null || _stems is null) return;
         int id = ++_openId;
-        double pos = Video.Position.TotalSeconds;
-        bool wasPlaying = _playing;
+        double pos = _atEnd ? _duration : Video.Position.TotalSeconds;
+        bool wasPlaying = _playing || _audioResume;
+        _audioResume = false;
         string? old = _previewPath;
 
         string source = await ChooseSourceAsync(_clip);
-        if (id != _openId) { if (source != _clip.Path) TryDelete(source); return; }
+        if (id != _openId) { if (source != _clip.Path) TryDelete(source); HideAudioPill(); return; }
 
         _previewPath = source == _clip.Path ? null : source;
         _resume = (pos, wasPlaying);
@@ -289,6 +291,16 @@ public partial class ClipPlayer : UserControl
         if (!IsLoaded) return;
         UpdateAudioText();
         UpdateRange();
+        if (_playing)
+        {
+            // The new sound has to be built before it can be heard. Keeping the picture running while that happens made it stutter, so playback
+            // pauses at once, says why, and carries on from the same spot when the new sound is ready.
+            _audioResume = true;
+            LoadText.Text = "Applying your volume changes…";
+            LoadPill.Visibility = Visibility.Visible;
+            Video.Pause(); SetPlaying(false);
+        }
+        else if (_audioResume) { LoadText.Text = "Applying your volume changes…"; LoadPill.Visibility = Visibility.Visible; }
         _audioTimer.Stop(); _audioTimer.Start();
     }
 
@@ -397,8 +409,19 @@ public partial class ClipPlayer : UserControl
     }
 
     /// <summary>The loading look: a note and a sliding bar on the picture, a pulsing timeline, dashes where the times will be, and nothing to click yet.</summary>
+    /// <summary>Takes the "applying your volume changes" note away once the new sound is in place (unless another change has come in, or the clip itself is opening).</summary>
+    private async void HideAudioPill()
+    {
+        await Task.Delay(300);
+        if (_audioResume || _loadingClip) return;
+        LoadPill.Visibility = Visibility.Collapsed;
+    }
+
+    private bool _loadingClip;   // the clip itself is still opening: the loading look owns the note then
+
     private void SetLoading(bool on, string text = "Opening clip…")
     {
+        _loadingClip = on;
         LoadText.Text = text;
         LoadPill.Visibility = LoadBar.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         StartBox.IsEnabled = EndBox.IsEnabled = !on;
@@ -467,6 +490,7 @@ public partial class ClipPlayer : UserControl
             UpdateRange();
             UpdateTime(Bar.Position);
             HideSwapCoverSoon(350);   // a moment for the new file to draw the picture at this spot
+            HideAudioPill();
             return;
         }
 
@@ -531,6 +555,7 @@ public partial class ClipPlayer : UserControl
     private void SetPlaying(bool playing)
     {
         _playing = playing;
+        Hitch.State = playing ? "editor, playing" : "editor";
         PlayButton.Content = playing ? "" : ""; // pause / play
         BigPlay.Visibility = playing || ErrorText.Visibility == Visibility.Visible || LoadPill.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     }

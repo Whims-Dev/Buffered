@@ -124,7 +124,7 @@ internal sealed class FramePipeline : IDisposable
     {
         var sw = Stopwatch.StartNew();
         long startHns = _tl.NowHns; // video frame times live on the same clock as the audio tracks
-        long n = 0;
+        long n = 0, skipped = 0;   // skipped: frames not taken while paused, so the video's clock stands still like the sound's
         double frameMs = 1000.0 / _fps;
         while (_running)
         {
@@ -140,9 +140,11 @@ internal sealed class FramePipeline : IDisposable
             // If we fell far behind (e.g. system stall), skip ahead instead of bursting.
             if (-wait > frameMs * 5) { n = (long)(sw.Elapsed.TotalMilliseconds / frameMs); due = n * frameMs; }
 
+            if (_tl.IsPaused) { skipped++; n++; continue; }
+
             if (Convert((int)(n % PoolSize)))
             {
-                _enc.Submit(_pool[n % PoolSize], startHns + n * 10_000_000L / _fps);
+                _enc.Submit(_pool[n % PoolSize], startHns + (n - skipped) * 10_000_000L / _fps);
                 Ticks++;
             }
             n++;

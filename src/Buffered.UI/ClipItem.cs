@@ -419,8 +419,8 @@ internal static class Media
     {
         Directory.CreateDirectory(PreviewDir);
         string path = System.IO.Path.Combine(PreviewDir, Guid.NewGuid().ToString("N") + ".mp4");
-        var (code, _) = await RunAsync(Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-map", "0:v:0", "-map", "0:a:0?",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-g", "6", "-keyint_min", "6", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-threads", "2",
+        var (code, _) = await RunAsync(ProcessPriorityClass.Idle, Tools.Ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-map", "0:v:0", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-g", "6", "-keyint_min", "6", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-threads", "1",
             "-c:a", "copy", "-fps_mode", "passthrough", "-movflags", "+faststart", path);   // same frame timing as the original, so the trim points still line up
         if (code == 0 && File.Exists(path)) return path;
         try { File.Delete(path); } catch { }
@@ -469,14 +469,16 @@ internal static class Media
         finally { Gate.Release(); }
     }
 
-    private static async Task<(int Code, string Output)> RunAsync(string exe, params string[] args)
+    private static Task<(int Code, string Output)> RunAsync(string exe, params string[] args) => RunAsync(ProcessPriorityClass.BelowNormal, exe, args);
+
+    private static async Task<(int Code, string Output)> RunAsync(ProcessPriorityClass priority, string exe, params string[] args)
     {
         try
         {
             var psi = new ProcessStartInfo(exe) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
-            try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { } // thumbnails and lengths must never slow a game down
+            try { p.PriorityClass = priority; } catch { } // thumbnails and lengths must never slow a game down
             var stdout = p.StandardOutput.ReadToEndAsync();
             _ = p.StandardError.ReadToEndAsync();
             await p.WaitForExitAsync();

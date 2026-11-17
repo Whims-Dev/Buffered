@@ -8,7 +8,23 @@ namespace Buffered;
 internal sealed class Timeline
 {
     private readonly long _epoch = Stopwatch.GetTimestamp();
-    public long NowHns => (long)((Stopwatch.GetTimestamp() - _epoch) * 10_000_000.0 / Stopwatch.Frequency);
+    private readonly object _gate = new();
+    private long _pausedTicks, _pauseStart;
+    private volatile bool _paused;
+
+    private long Raw => Stopwatch.GetTimestamp() - _epoch;
+
+    /// <summary>True while recording is paused: the clock stands still, and video and sound are not added to the buffer.</summary>
+    public bool IsPaused => _paused;
+
+    /// <summary>The time on the clock. Time spent paused is left out, so what is recorded before and after a pause joins without a gap.</summary>
+    public long NowHns
+    {
+        get { lock (_gate) return (long)(((_paused ? _pauseStart : Raw) - _pausedTicks) * 10_000_000.0 / Stopwatch.Frequency); }
+    }
+
+    public void Pause() { lock (_gate) { if (_paused) return; _pauseStart = Raw; _paused = true; } }
+    public void Resume() { lock (_gate) { if (!_paused) return; _pausedTicks += Raw - _pauseStart; _paused = false; } }
 }
 
 public sealed record AudioDevice(string Id, string Name);
@@ -329,7 +345,7 @@ internal sealed class AudioTrack : IDisposable
 
     private void OnData(object? sender, WaveInEventArgs e)
     {
-        if (e.BytesRecorded <= 0) return;
+        if (e.BytesRecorded <= 0 || _tl.IsPaused) return;   // while paused, the sound is simply not kept
         long now = _tl.NowHns;
         long frames = e.BytesRecorded / _frameBytes;
         var data = new byte[frames * _frameBytes];

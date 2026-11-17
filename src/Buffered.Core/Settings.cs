@@ -23,6 +23,13 @@ public sealed class GameProfile
                             || !string.IsNullOrWhiteSpace(Folder);
 }
 
+/// <summary>An extra hotkey that saves only the last stretch of the buffer.</summary>
+public sealed class ClipKey
+{
+    public string Key { get; set; } = "";
+    public int Seconds { get; set; } = 60;
+}
+
 /// <summary>A program whose sound is recorded on a track of its own (Discord, for example).</summary>
 public sealed class AppTrackSetting
 {
@@ -105,6 +112,11 @@ public sealed class Settings
     /// <summary>0 means pick a sensible bitrate for the resolution and frame rate.</summary>
     public int BitrateKbps { get; set; } = 0;
     public string Hotkey { get; set; } = "F8";
+    /// <summary>Optional keys: pause or resume recording (the buffer is kept), and stop or start it (stopping empties the buffer). Empty means none.</summary>
+    public string PauseHotkey { get; set; } = "";
+    /// <summary>Extra hotkeys, each saving just the last few seconds or minutes. As many as the user wants.</summary>
+    public List<ClipKey> ClipKeys { get; set; } = new();
+    public string StopHotkey { get; set; } = "";
     public string OutDir { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Buffered");
     /// <summary>
     /// Programs whose window is recorded instead of the whole monitor while they are running, separated by commas
@@ -153,10 +165,37 @@ public sealed class Settings
         }
     }
 
-    public int HotkeyCode =>
-        Hotkey.Length > 1 && (Hotkey[0] is 'F' or 'f') && int.TryParse(Hotkey.AsSpan(1), out var n) && n is >= 1 and <= 24
-            ? 0x6F + n
-            : char.ToUpperInvariant(Hotkey.Length > 0 ? Hotkey[0] : 'F');
+    public int PauseHotkeyCode => CodeFor(PauseHotkey);
+    public int StopHotkeyCode => CodeFor(StopHotkey);
+
+    /// <summary>
+    /// The Windows key code of the main key in a hotkey such as "F9", "P", "5" or "Ctrl+Alt+F9", or 0 for none.
+    /// </summary>
+    public static int CodeFor(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return 0;
+        string main = key.Contains('+') ? key[(key.LastIndexOf('+') + 1)..] : key;
+        main = main.Trim();
+        if (main.Length == 0) return 0;
+        if (main.Length > 1 && (main[0] is 'F' or 'f') && int.TryParse(main.AsSpan(1), out var n) && n is >= 1 and <= 24) return 0x6F + n;
+        return char.ToUpperInvariant(main[0]);
+    }
+
+    /// <summary>The modifiers a hotkey needs held: 1 = Ctrl, 2 = Alt, 4 = Shift.</summary>
+    public static int ModifiersFor(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key) || !key.Contains('+')) return 0;
+        int m = 0;
+        foreach (var part in key[..key.LastIndexOf('+')].Split('+', StringSplitOptions.TrimEntries))
+        {
+            if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase)) m |= 1;
+            else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase)) m |= 2;
+            else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase)) m |= 4;
+        }
+        return m;
+    }
+
+    public int HotkeyCode => CodeFor(Hotkey) is var c and not 0 ? c : 'F';
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Buffered", "settings.json");

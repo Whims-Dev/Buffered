@@ -34,11 +34,11 @@ You do not have to take anyone's word that it is safe: the full source is in thi
 ## Using it
 
 1. Run `BufferedUI.exe`. It opens the clip manager and starts the recorder in the system tray.
-2. Press **F8** (change it in Settings) to save the last few minutes. Clips go to `Videos\Buffered`.
+2. Press **F8** (change it in Settings) to save the last few minutes. Add as many extra hotkeys as you like in Settings, each saving just the last few seconds or minutes you choose. Clips go to `Videos\Buffered`.
 3. Open a clip to play it, trim it, or change the volume of each track. Select a clip and press **Share** to make a smaller copy or send it to Discord.
 4. In Settings, use **Add game** to record only a game's window, and **Sharing** to add a Discord webhook.
 
-Closing the window leaves the recorder running in the tray. Use the tray icon to pause (this frees its VRAM) or quit.
+Closing the window leaves the recorder running in the tray. **Pause** holds recording and keeps what is in the buffer (a clip saved later joins what came before and after). **Stop** turns recording off, empties the buffer and frees its VRAM. Both are in the window and the tray menu, and each can have an optional hotkey in Settings (the ✕ clears it).
 
 ## Building
 

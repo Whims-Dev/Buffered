@@ -31,7 +31,7 @@ static class Program
         }
 
         var settings = Settings.Load();
-        ApplyArgs(settings, args, out int selfTest, out bool startPaused, out int afterPid, out bool background);
+        ApplyArgs(settings, args, out int selfTest, out bool startStopped, out int afterPid, out bool background);
 
         if (selfTest > 0) return RunSelfTest(settings, selfTest);
 
@@ -60,7 +60,7 @@ static class Program
         ThreadPool.QueueUserWorkItem(_ => TempSweep.Run(settings.OutDir));
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApp(settings, startPaused, openWindow));
+        Application.Run(new TrayApp(settings, startStopped, openWindow));
         return 0;
     }
 
@@ -93,12 +93,12 @@ static class Program
         catch (Exception ex) { Log("FAILED: " + ex); return 1; }
     }
 
-    static void ApplyArgs(Settings s, string[] a, out int selfTest, out bool startPaused, out int afterPid, out bool background)
+    static void ApplyArgs(Settings s, string[] a, out int selfTest, out bool startStopped, out int afterPid, out bool background)
     {
-        selfTest = 0; startPaused = false; afterPid = 0; background = false;
+        selfTest = 0; startStopped = false; afterPid = 0; background = false;
         for (int i = 0; i < a.Length; i++)
         {
-            if (a[i] == "--paused") { startPaused = true; continue; }
+            if (a[i] == "--stopped") { startStopped = true; continue; }
             if (a[i] == "--background") { background = true; continue; }
             if (i + 1 >= a.Length) break;
             switch (a[i])

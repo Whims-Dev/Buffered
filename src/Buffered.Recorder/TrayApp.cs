@@ -11,14 +11,15 @@ sealed class TrayApp : ApplicationContext
 {
     private Settings _settings;
     private readonly NotifyIcon _tray;
-    private readonly ToolStripMenuItem _status, _saveItem, _pauseItem;
-    private volatile bool _paused;
+    private readonly ToolStripMenuItem _status, _saveItem, _stopItem, _pauseItem;
+    private volatile bool _stopped;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Icon _iconOn, _iconBusy, _iconSaved, _iconFailed;
     private readonly object _engineLock = new();
     private RecorderEngine? _engine;
     private string? _error;
-    private bool _keyDown;
+    private bool _keyDown, _pauseKeyDown, _stopKeyDown;
+    private readonly HashSet<ClipKey> _clipKeysDown = new();
     private volatile bool _saving;
     private int _ticks;
     private string? _lastClip, _lastApp;
@@ -31,7 +32,7 @@ sealed class TrayApp : ApplicationContext
 
     private readonly Control _sync = new();
 
-    public TrayApp(Settings settings, bool startPaused, bool openWindow = false)
+    public TrayApp(Settings settings, bool startStopped, bool openWindow = false)
     {
         _settings = settings;
         _ = _sync.Handle; // create the handle now so other threads can marshal work onto the UI thread
@@ -49,8 +50,10 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(_status);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_saveItem);
-        _pauseItem = new ToolStripMenuItem("Pause recording", null, (_, _) => SetPaused(!_paused));
+        _pauseItem = new ToolStripMenuItem("Pause recording", null, (_, _) => TogglePause());
         menu.Items.Add(_pauseItem);
+        _stopItem = new ToolStripMenuItem("Stop recording", null, (_, _) => SetStopped(!_stopped));
+        menu.Items.Add(_stopItem);
         menu.Items.Add("Open clips folder", null, (_, _) => OpenFolder());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => { CloseClipManager(); Quit(); });
@@ -58,12 +61,13 @@ sealed class TrayApp : ApplicationContext
         _tray = new NotifyIcon { Icon = _iconBusy, Text = "Buffered", ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => OpenWindow();
 
-        if (startPaused)
+        if (startStopped)
         {
-            _paused = true;
-            _pauseItem.Text = "Resume recording";
-            _status.Text = "Paused";
-            _tray.Text = "Buffered · paused";
+            _stopped = true;
+            _stopItem.Text = "Start recording";
+            _pauseItem.Visible = false;
+            _status.Text = "Stopped";
+            _tray.Text = "Buffered · stopped";
         }
         else StartEngine();
 
@@ -88,7 +92,7 @@ sealed class TrayApp : ApplicationContext
                 _engine = new RecorderEngine(_settings);
                 _engine.Note += LogLine;
                 _engine.Start();
-                _engine.NeedsRestart += reason => { LogLine($"restarting: {reason}"); if (!_paused && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
+                _engine.NeedsRestart += reason => { LogLine($"restarting: {reason}"); if (!_stopped && !_quit) RelaunchSoon(false); }; // e.g. the game window closed or was resized
                 _error = null; _starting = false; _startAttempt = 0;
                 LogLine($"recording started ({_engine.OutputWidth}x{_engine.OutputHeight})");
                 _tray.Icon = _iconOn;
@@ -110,7 +114,7 @@ sealed class TrayApp : ApplicationContext
                     _tray.Text = "Buffered · starting…";
                     Task.Delay(TimeSpan.FromSeconds(wait)).ContinueWith(_ => _sync.BeginInvoke(() =>
                     {
-                        if (!_quit && !_paused && _engine is null) StartEngine();
+                        if (!_quit && !_stopped && _engine is null) StartEngine();
                     }));
                     return;
                 }
@@ -164,7 +168,7 @@ sealed class TrayApp : ApplicationContext
         var psi = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
         psi.ArgumentList.Add("--after-pid");
         psi.ArgumentList.Add(Environment.ProcessId.ToString());
-        if (paused) psi.ArgumentList.Add("--paused");
+        if (paused) psi.ArgumentList.Add("--stopped");
         Process.Start(psi);
         Quit();
     }
@@ -173,19 +177,62 @@ sealed class TrayApp : ApplicationContext
     private void RelaunchSoon(bool paused) =>
         Task.Delay(200).ContinueWith(_ => _sync.BeginInvoke(() => Relaunch(paused)));
 
-    private void SetPaused(bool pause)
+    private void SetStopped(bool stop)
     {
-        if (pause == _paused) return;
-        Relaunch(pause);
+        if (stop == _stopped) return;
+        Relaunch(stop);
+    }
+
+    /// <summary>Pauses or resumes adding to the buffer. Unlike stopping, nothing is thrown away and the graphics memory stays in use.</summary>
+    private void TogglePause()
+    {
+        RecorderEngine? e; lock (_engineLock) e = _engine;
+        if (_stopped || e is null) return;
+        bool pause = !e.IsPaused;
+        e.SetPaused(pause);
+        ShowPaused(pause, e);
+    }
+
+    private void ShowPaused(bool paused, RecorderEngine e)
+    {
+        _pauseItem.Text = paused ? "Resume recording" : "Pause recording";
+        _tray.Icon = paused ? _iconBusy : _iconOn;
+        double sec = e.BufferSeconds > 0 ? Math.Min(e.BufferedSeconds, e.BufferSeconds) : e.BufferedSeconds;
+        string t = $"{(int)sec / 60}:{(int)sec % 60:00} buffered";
+        _status.Text = (paused ? "Paused · " : "Recording · ") + t;
+        _tray.Text = "Buffered · " + (paused ? "paused · " : "") + t;
     }
 
     // ---- hotkey, saving ----------------------------------------------------
 
+    /// <summary>True while the hotkey (a key, or a key with Ctrl, Alt and Shift) is held. The modifiers must match exactly, so F9 and Ctrl+F9 can be different hotkeys.</summary>
+    private static bool IsDown(string? hotkey)
+    {
+        int code = Settings.CodeFor(hotkey);
+        if (code == 0 || Native.GetAsyncKeyState(code) >= 0) return false;
+        int want = Settings.ModifiersFor(hotkey);
+        int have = (Native.GetAsyncKeyState(0x11) < 0 ? 1 : 0) | (Native.GetAsyncKeyState(0x12) < 0 ? 2 : 0) | (Native.GetAsyncKeyState(0x10) < 0 ? 4 : 0);
+        return want == have;
+    }
+
     private void OnTick()
     {
-        bool pressed = Native.GetAsyncKeyState(_settings.HotkeyCode) < 0;
+        bool pressed = IsDown(_settings.Hotkey);
         if (pressed && !_keyDown) SaveClip();
         _keyDown = pressed;
+        bool pp = IsDown(_settings.PauseHotkey), sp = IsDown(_settings.StopHotkey);
+        bool pauseHit = pp && !_pauseKeyDown, stopHit = sp && !_stopKeyDown;
+        _pauseKeyDown = pp; _stopKeyDown = sp;
+        foreach (var ck in _settings.ClipKeys.ToArray())
+        {
+            bool down = IsDown(ck.Key);
+            bool was = _clipKeysDown.Contains(ck);
+            if (down && !was) { _clipKeysDown.Add(ck); SaveClip(Math.Max(1, ck.Seconds)); }
+            else if (!down && was) _clipKeysDown.Remove(ck);
+        }
+        _clipKeysDown.RemoveWhere(k => !_settings.ClipKeys.Contains(k));
+        if (stopHit) { SetStopped(!_stopped); return; }
+        if (pauseHit) TogglePause();
 
         _ticks++;
         if (_ticks % 33 == 0) _lastApp = ForegroundApp.Current() ?? _lastApp;
@@ -194,8 +241,9 @@ sealed class TrayApp : ApplicationContext
         {
             double shownSeconds = e.BufferSeconds > 0 ? Math.Min(e.BufferedSeconds, e.BufferSeconds) : e.BufferedSeconds;   // can briefly hold a moment more than its length
             int m = (int)shownSeconds / 60, s = (int)shownSeconds % 60;
-            _status.Text = $"Recording · {m}:{s:00} buffered";
-            _tray.Text = $"Buffered · {m}:{s:00} buffered";
+            string head = e.IsPaused ? "Paused" : "Recording";
+            _status.Text = $"{head} · {m}:{s:00} buffered";
+            _tray.Text = e.IsPaused ? $"Buffered · paused · {m}:{s:00} buffered" : $"Buffered · {m}:{s:00} buffered";
         }
     }
 
@@ -208,7 +256,7 @@ sealed class TrayApp : ApplicationContext
     /// </summary>
     private void CheckSteamVr()
     {
-        if (_paused || _engine is null || !_settings.VrAutoSwitch) { _vrFlips = 0; return; }
+        if (_stopped || _engine is null || !_settings.VrAutoSwitch) { _vrFlips = 0; return; }
         bool now = AudioDevices.IsSteamVrRunning();
         _vrFlips = now != _vrAtStart ? _vrFlips + 1 : 0;
         if (_vrFlips >= 2) Relaunch(false);
@@ -224,7 +272,7 @@ sealed class TrayApp : ApplicationContext
     private void CheckGameWindow()
     {
         var engine = _engine;
-        if (_paused || engine is null) { _targetFlips = 0; return; }
+        if (_stopped || engine is null) { _targetFlips = 0; return; }
 
         var want = GameWindow.Find(_settings);
         var profile = _settings.ProfileFor(want?.ProcessName);
@@ -248,16 +296,16 @@ sealed class TrayApp : ApplicationContext
 
     private int _appFlips;
 
-    private string? DoSave(Action? onCaptured = null)
+    private string? DoSave(Action? onCaptured = null, double? lastSeconds = null)
     {
         RecorderEngine? e; lock (_engineLock) e = _engine;
-        if (e is null) throw new InvalidOperationException(_paused ? "Recording is paused." : _error ?? "The recorder is not running.");
+        if (e is null) throw new InvalidOperationException(_stopped ? "Recording is stopped." : _error ?? "The recorder is not running.");
         // A recorded game names its own clips; otherwise the clip is named after the program that was in front.
         string? label = e.GameName is { Length: > 0 } g ? ClipNames.FriendlyName(g) : (ForegroundApp.Current() ?? _lastApp);
-        return _lastClip = e.SaveClip(label, onCaptured: onCaptured);
+        return _lastClip = e.SaveClip(label, lastSeconds, onCaptured);
     }
 
-    private void SaveClip()
+    private void SaveClip(double? lastSeconds = null)
     {
         if (_saving) return;
         _saving = true;
@@ -267,7 +315,7 @@ sealed class TrayApp : ApplicationContext
             {
                 // The sound plays the moment the clip's contents are captured (a fraction of a second after the key press),
                 // not after the file is finished, and after the capture so it can't end up in the clip.
-                DoSave(() => { if (_settings.SaveSound) Sounds.PlaySaved(); });
+                DoSave(() => { if (_settings.SaveSound) Sounds.PlaySaved(); }, lastSeconds);
                 Flash(_iconSaved);
             }
             catch
@@ -288,7 +336,7 @@ sealed class TrayApp : ApplicationContext
         _sync.BeginInvoke(() => { if (!_quit) _tray.Icon = icon; });
         Task.Delay(1300).ContinueWith(_ => _sync.BeginInvoke(() =>
         {
-            if (!_quit) _tray.Icon = _engine is not null && !_paused ? _iconOn : _iconBusy;
+            if (!_quit) _tray.Icon = _engine is not null && !_stopped && !_engine.IsPaused ? _iconOn : _iconBusy;
         }));
     }
 
@@ -331,6 +379,8 @@ sealed class TrayApp : ApplicationContext
                         "status" => JsonSerializer.Serialize(BuildStatus(), Ipc.Json),
                         "reload" => ReloadFromPipe(),
                         "soft" => SoftFromPipe(),
+                        "stop" => StopFromPipe(true),
+                        "start" => StopFromPipe(false),
                         "pause" => PauseFromPipe(true),
                         "resume" => PauseFromPipe(false),
                         _ => "error: unknown command",
@@ -352,7 +402,7 @@ sealed class TrayApp : ApplicationContext
         try { return DoSave(() => { if (_settings.SaveSound) Sounds.PlaySaved(); })!; } finally { _saving = false; }
     }
 
-    private string ReloadFromPipe() { RelaunchSoon(_paused); return "ok"; }
+    private string ReloadFromPipe() { RelaunchSoon(_stopped); return "ok"; }
 
     /// <summary>
     /// Picks up the settings that can change while recording without a restart, so adjusting a volume
@@ -368,6 +418,9 @@ sealed class TrayApp : ApplicationContext
         _settings.KeepWindowVisible = s.KeepWindowVisible;
         _settings.AppTracks = s.AppTracks;   // an app's volume and whether it is in the mix apply to the next clip
         _settings.GameProfiles = s.GameProfiles;   // a game's volume and folder apply to its next clip
+        _settings.PauseHotkey = s.PauseHotkey;
+        _settings.StopHotkey = s.StopHotkey;
+        _settings.ClipKeys = s.ClipKeys;
         if (_settings.Hotkey != s.Hotkey)
         {
             _settings.Hotkey = s.Hotkey;
@@ -376,9 +429,17 @@ sealed class TrayApp : ApplicationContext
         return "ok";
     }
 
+    private string StopFromPipe(bool pause)
+    {
+        if (pause != _stopped) RelaunchSoon(pause);
+        return "ok";
+    }
+
     private string PauseFromPipe(bool pause)
     {
-        if (pause != _paused) RelaunchSoon(pause);
+        RecorderEngine? e; lock (_engineLock) e = _engine;
+        if (_stopped || e is null) return "error: recording is not running";
+        if (e.IsPaused != pause) _sync.BeginInvoke(() => { e.SetPaused(pause); ShowPaused(pause, e); });
         return "ok";
     }
 
@@ -397,9 +458,9 @@ sealed class TrayApp : ApplicationContext
         if ((now - _vramAt).TotalSeconds >= 3) { _vram = Telemetry.OwnVramMb(); _vramAt = now; }
 
         return e is null
-            ? new RecorderStatus(false, 0, _settings.BufferSeconds, 0, _vram, _cpuPct, 0, 0, 0, "", _error, _paused, Starting: _starting)
+            ? new RecorderStatus(false, 0, _settings.BufferSeconds, 0, _vram, _cpuPct, 0, 0, 0, "", _error, false, Starting: _starting, Stopped: _stopped)
             : new RecorderStatus(true, e.BufferedSeconds, e.BufferSeconds, (e.BufferedBytes + e.AudioBytes) / 1048576.0, _vram, _cpuPct,
-                                 e.OutputWidth, e.OutputHeight, e.Fps, e.Monitor?.ToString() ?? "", null, false, e.AudioDescription, e.GameLevel, e.MicLevel, e.SourceName);
+                                 e.OutputWidth, e.OutputHeight, e.Fps, e.Monitor?.ToString() ?? "", null, e.IsPaused, e.AudioDescription, e.GameLevel, e.MicLevel, e.SourceName, false, false);
     }
 
     // ---- menu actions -----------------------------------------------------

@@ -585,9 +585,43 @@
                             <TextBlock Text="General" Style="{StaticResource Caption}" Margin="18,14,18,2"/>
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center"><TextBlock Text="Save hotkey"/><TextBlock Text="Click, then press the key you want" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
-                                <Button x:Name="HotkeyButton" Width="300" HorizontalAlignment="Right" HorizontalContentAlignment="Left"
+                                <Button x:Name="HotkeyButton" Tag="save" Width="300" HorizontalAlignment="Right" HorizontalContentAlignment="Left"
                                         Click="HotkeyButton_Click" PreviewKeyDown="HotkeyButton_PreviewKeyDown" LostKeyboardFocus="HotkeyButton_LostFocus"/>
                             </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,360,0"><TextBlock Text="Pause hotkey (optional)"/><TextBlock Text="Pauses recording and resumes it. The buffer is kept; a clip saved afterwards joins what was recorded before and after." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button x:Name="PauseHotkeyButton" Tag="pause" Width="300" HorizontalContentAlignment="Left"
+                                            Click="HotkeyButton_Click" PreviewKeyDown="HotkeyButton_PreviewKeyDown" LostKeyboardFocus="HotkeyButton_LostFocus"/>
+                                    <Button x:Name="PauseHotkeyClear" Tag="pause" Width="34" Height="34" Padding="0" Margin="6,0,0,0" Click="HotkeyClear_Click" ToolTip="Clear this hotkey" AutomationProperties.Name="Clear the pause hotkey">
+                                        <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE711;" FontSize="12"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,360,0"><TextBlock Text="Stop hotkey (optional)"/><TextBlock Text="Stops recording and empties the buffer, and starts it again. Frees the graphics memory while stopped." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button x:Name="StopHotkeyButton" Tag="stop" Width="300" HorizontalContentAlignment="Left"
+                                            Click="HotkeyButton_Click" PreviewKeyDown="HotkeyButton_PreviewKeyDown" LostKeyboardFocus="HotkeyButton_LostFocus"/>
+                                    <Button x:Name="StopHotkeyClear" Tag="stop" Width="34" Height="34" Padding="0" Margin="6,0,0,0" Click="HotkeyClear_Click" ToolTip="Clear this hotkey" AutomationProperties.Name="Clear the stop hotkey">
+                                        <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE711;" FontSize="12"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <StackPanel Margin="18,12">
+                                <TextBlock Text="Extra clip hotkeys"/>
+                                <TextBlock Text="Each one saves just the last stretch you choose, never more than the buffer holds." Style="{StaticResource Caption}" Margin="0,5,0,8" TextWrapping="Wrap"/>
+                                <StackPanel x:Name="ClipKeysPanel"/>
+                                <Button HorizontalAlignment="Left" Height="34" Padding="14,0" Margin="0,4,0,0" Click="AddClipKey_Click" AutomationProperties.Name="Add a clip hotkey">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE710;" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Add a hotkey" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,320,0"><TextBlock Text="Clips folder"/><TextBlock x:Name="FolderText" Style="{StaticResource Caption}" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/></StackPanel>
@@ -743,10 +777,17 @@
                     <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="Gray" Margin="0,0,8,0" VerticalAlignment="Center"/>
                     <TextBlock x:Name="StatusText" Text="Connecting…" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
                     <Button x:Name="PauseButton" Style="{StaticResource SmallButton}" Margin="10,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"
-                            Click="PauseButton_Click" AutomationProperties.Name="Pause or resume recording">
+                            Click="PauseButton_Click" AutomationProperties.Name="Pause or resume recording" ToolTip="Pause recording (keeps the buffer)">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock x:Name="PauseGlyph" FontFamily="{StaticResource IconFont}" Text="&#xE769;" Margin="0,1,5,0" VerticalAlignment="Center"/>
                             <TextBlock x:Name="PauseLabel" Text="Pause" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="StopButton" Style="{StaticResource SmallButton}" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"
+                            Click="StopButton_Click" AutomationProperties.Name="Stop or start recording" ToolTip="Stop recording (empties the buffer)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="StopGlyph" FontFamily="{StaticResource IconFont}" Text="&#xE71A;" Margin="0,1,5,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="StopLabel" Text="Stop" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                     <Button x:Name="StartRecorderButton" Content="Start recorder" Style="{StaticResource SmallButton}" Margin="10,0,0,0" VerticalAlignment="Center"

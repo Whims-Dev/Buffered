@@ -112,7 +112,9 @@ public static class ClipLibrary
         lock (Gate) { if (_clips.Remove(KeyOf(path))) Save(); }
     }
 
-    private static void Save()
+    private static void Save() => Hitch.Measure("save clip details (favorites, names, notes)", SaveCore);
+
+    private static void SaveCore()
     {
         try
         {

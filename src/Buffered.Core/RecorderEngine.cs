@@ -60,6 +60,15 @@ public sealed class RecorderEngine : IDisposable
     /// <summary>The buffer length actually in use (a running game can have its own).</summary>
     public int BufferSeconds => _eff?.BufferSeconds ?? _s.BufferSeconds;
 
+    /// <summary>True while recording is paused (the buffer is kept, nothing is added).</summary>
+    public bool IsPaused => _timeline?.IsPaused ?? false;
+
+    /// <summary>Pauses or resumes adding to the buffer. What was recorded before and after joins without a gap.</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused) _timeline?.Pause(); else _timeline?.Resume();
+    }
+
     /// <summary>Said when something worth keeping in the log happens while starting (for example, trying another graphics chip).</summary>
     public event Action<string>? Note;
 

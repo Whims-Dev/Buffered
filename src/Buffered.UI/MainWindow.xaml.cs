@@ -23,7 +23,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _applyTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private readonly DispatcherTimer _refreshTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool _polling;
-    private bool _isPaused;
+    private bool _isPaused, _isStopped;
     private DateTime _restartUntil = DateTime.MinValue;
 
     public double CardWidth { get; private set; } = 260;
@@ -51,7 +51,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         Player.Dialogs = Dialogs;
-        Player.CloseRequested += () => { Player.Visibility = Visibility.Collapsed; ClipsPage.Visibility = Visibility.Visible; LoadClips(); };
+        Player.CloseRequested += () => { Hitch.State = "clips"; Player.Visibility = Visibility.Collapsed; ClipsPage.Visibility = Visibility.Visible; LoadClips(); };
         Player.OpenEditorSettingsRequested += () => { _settingsSection = "edi"; NavSettings.IsChecked = true; ShowSettings(); };
         Player.TimelineDetailChanged += () => { _loading = true; SelectTimeline(); SelectScrub(); _loading = false; };
         Player.FileReplaced += path => { _allClips.RemoveAll(c => c.Path == path); }; // drop the cached thumbnail and size
@@ -67,14 +67,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ContentRendered -= StartUpHandler;
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
             {
-                PopulateSettings();
+                Hitch.StartWatchdog(Dispatcher);
+                Hitch.Measure("fill in the settings", PopulateSettings);
                 ShowUpdateResult();
                 FixStaleStartupEntry();
                 _ = Task.Run(() => { try { var (n, b) = InstallCleaner.Clean(AppContext.BaseDirectory, new[] { _settings.OutDir }.Concat(_settings.GameProfiles.Values.Select(g => g.Folder))); if (n > 0) Media.LogWindow($"removed {n} leftover files from older versions ({b / 1048576} MB)"); } catch { } });
-                CleanOrphanStems();
+                Hitch.Measure("remove orphaned companion files", CleanOrphanStems);
                 LoadClips();
                 WatchFolder();
-                UpdateCardWidth();
+                Hitch.Measure("size the cards", UpdateCardWidth);
                 if (WindowState != WindowState.Minimized)   // a window that opens minimized never raises the state change below
                 {
                     _statusTimer.Start();
@@ -99,6 +100,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!IsLoaded && ClipsPage is null) return;
         bool settings = NavSettings.IsChecked == true;
+        Hitch.State = settings ? "settings" : "clips";
         // Leaving the player (either way) closes it; only one page is ever active.
         if (Player.Visibility == Visibility.Visible) { Player.Release(); Player.Visibility = Visibility.Collapsed; }
         ClipsPage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
@@ -124,7 +126,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { }
     }
 
-    private void LoadClips()
+    private void LoadClips() => Hitch.Measure("load clips", LoadClipsCore);
+
+    private void LoadClipsCore()
     {
         var dir = _settings.OutDir;
         ClipLibrary.Use(dir);
@@ -134,6 +138,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Clips live in the folder itself or in one level of folders inside it.
         var places = new List<string> { dir };
         if (Directory.Exists(dir)) places.AddRange(ClipLibrary.Folders().Select(ClipLibrary.FolderPath));
+        var scanStart = System.Diagnostics.Stopwatch.GetTimestamp();
         foreach (var place in places.Where(Directory.Exists))
             foreach (var f in Directory.EnumerateFiles(place, "*.mp4"))
             {
@@ -146,13 +151,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 catch (IOException) { /* still being written */ }
             }
 
+        if (Hitch.Detailed) Hitch.Log($"  reading the clips folder: {System.Diagnostics.Stopwatch.GetElapsedTime(scanStart).TotalMilliseconds:0} ms for {fresh.Count} clips");
         _allClips.Clear();
         _allClips.AddRange(fresh.OrderByDescending(c => c.When));
         _sel.RemoveWhere(c => !_allClips.Contains(c));
         if (_view.StartsWith("dir:") && !ClipLibrary.Folders().Contains(_view[4..], StringComparer.OrdinalIgnoreCase)) _view = "all";
         RebuildFilters();
-        RebuildRail();
-        ApplyFilter();
+        Hitch.Measure("rebuild the folder list", RebuildRail);
+        Hitch.Measure("show the clips", ApplyFilter);
         SelectionChanged();
     }
 
@@ -224,7 +230,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         ClipsPage.Visibility = Visibility.Collapsed; // the player replaces the clip list while it is open
         Player.Visibility = Visibility.Visible;
-        Player.Open(clip, select);
+        Hitch.State = "opening a clip"; Hitch.Measure("open a clip in the editor", () => Player.Open(clip, select));
     }
 
     private void External_Click(object sender, RoutedEventArgs e)
@@ -265,7 +271,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveButton.IsEnabled = true;
         if (path is null)
         {
-            Dialogs.Toast("Couldn't save a clip", _isPaused ? "Recording is paused." : "Is the recorder running?", error: true);
+            Dialogs.Toast("Couldn't save a clip", _isStopped ? "Recording is stopped." : _isPaused ? "Recording is paused." : "Is the recorder running?", error: true);
             return;
         }
         LoadClips();
@@ -288,11 +294,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 SetOffline("Recorder isn't running", true);
             }
-            else if (s.Paused)
+            else if (s.Stopped)
             {
-                SetOffline("Paused", false);
+                SetOffline("Stopped", false);
                 StatusDot.Fill = new SolidColorBrush(Color.FromRgb(0xE0, 0xA0, 0x30));
-                ShowPauseButton(paused: true);
+                ShowButtons(paused: false, stopped: true);
                 VramText.Text = "VRAM 0 MB";
             }
             else if (!s.Recording)
@@ -301,10 +307,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else
             {
-                StatusDot.Fill = new SolidColorBrush(Color.FromRgb(0x2E, 0x9E, 0x5B));
-                StatusText.Text = "Recording";
+                StatusDot.Fill = new SolidColorBrush(s.Paused ? Color.FromRgb(0xE0, 0xA0, 0x30) : Color.FromRgb(0x2E, 0x9E, 0x5B));
+                StatusText.Text = s.Paused ? "Paused" : "Recording";
                 StartRecorderButton.Visibility = Visibility.Collapsed;
-                ShowPauseButton(paused: false);
+                ShowButtons(s.Paused, stopped: false);
                 BufferText.Text = $"Buffer {FormatClock(s.BufferSeconds > 0 ? Math.Min(s.BufferedSeconds, s.BufferSeconds) : s.BufferedSeconds)} / {FormatClock(s.BufferSeconds)}";   // the buffer trims at a keyframe, so it can hold a moment more than its length: show it as full
                 BufferBar.Visibility = Visibility.Visible;
                 BufferBar.Value = s.BufferSeconds > 0 ? Math.Min(100, s.BufferedSeconds / s.BufferSeconds * 100) : 0;
@@ -320,22 +326,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally { _polling = false; }
     }
 
-    private void ShowPauseButton(bool paused)
+    private void ShowButtons(bool paused, bool stopped)
     {
         _isPaused = paused;
-        PauseButton.Visibility = Visibility.Visible;
+        _isStopped = stopped;
+        // Pause (keeps the buffer) only while recording is on; Stop turns into Start once stopped.
+        PauseButton.Visibility = stopped ? Visibility.Collapsed : Visibility.Visible;
         PauseGlyph.Text = paused ? "" : ""; // play / pause
         PauseLabel.Text = paused ? "Resume" : "Pause";
+        PauseButton.ToolTip = paused ? "Resume recording" : "Pause recording (keeps the buffer)";
+        StopButton.Visibility = Visibility.Visible;
+        StopGlyph.Text = stopped ? "" : ""; // play / stop
+        StopLabel.Text = stopped ? "Start" : "Stop";
+        StopButton.ToolTip = stopped ? "Start recording" : "Stop recording (empties the buffer)";
     }
 
     private async void PauseButton_Click(object sender, RoutedEventArgs e)
     {
         PauseButton.IsEnabled = false;
+        if (_isPaused) await Ipc.ResumeAsync(); else await Ipc.PauseAsync();
+        await PollStatusAsync();
+        PauseButton.IsEnabled = true;
+    }
+
+    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        StopButton.IsEnabled = false;
         _pendingText = "Restarting…";
         _restartUntil = DateTime.UtcNow.AddSeconds(6);
         StatusText.Text = "Restarting…";
-        if (_isPaused) await Ipc.ResumeAsync(); else await Ipc.PauseAsync();
-        PauseButton.IsEnabled = true;
+        if (_isStopped) await Ipc.StartAsync(); else await Ipc.StopAsync();
+        StopButton.IsEnabled = true;
     }
 
     private void SetOffline(string text, bool canStart)
@@ -343,6 +364,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         StatusDot.Fill = Brushes.Gray;
         StatusText.Text = text;
         PauseButton.Visibility = Visibility.Collapsed;
+        StopButton.Visibility = Visibility.Collapsed;
         StartRecorderButton.Visibility = canStart ? Visibility.Visible : Visibility.Collapsed;
         BufferText.Text = ""; BufferBar.Visibility = Visibility.Collapsed; VramText.Text = ""; CpuText.Text = ""; QualityText.Text = "";
         AudioMeters.Visibility = Visibility.Collapsed;
@@ -381,6 +403,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FillAudioChoices();
 
         HotkeyButton.Content = _settings.Hotkey;
+        ShowOptionalKeys();
+        RebuildClipKeys();
         HotkeyChip.Text = _settings.Hotkey;
         FolderText.Text = _settings.OutDir;
         VrBox.IsChecked = _settings.VrAutoSwitch;
@@ -814,19 +838,101 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return error;
     }
 
+    private Button? _capturing;
+
+    private static object KeyOf(Button b) => b.Tag;   // "save", "pause" or "stop", or the ClipKey an extra row edits
+
+    private string GetKey(object which) => which switch { ClipKey ck => ck.Key, "pause" => _settings.PauseHotkey, "stop" => _settings.StopHotkey, _ => _settings.Hotkey };
+
+    private void SetKey(object which, string value)
+    {
+        if (which is ClipKey ck) ck.Key = value;
+        else if (which as string == "pause") _settings.PauseHotkey = value;
+        else if (which as string == "stop") _settings.StopHotkey = value;
+        else _settings.Hotkey = value;
+    }
+
+    // ---- extra clip hotkeys -------------------------------------------------
+
+    private void RebuildClipKeys()
+    {
+        ClipKeysPanel.Children.Clear();
+        foreach (var ck in _settings.ClipKeys) ClipKeysPanel.Children.Add(BuildClipKeyRow(ck));
+    }
+
+    private UIElement BuildClipKeyRow(ClipKey ck)
+    {
+        bool minutes = ck.Seconds >= 60 && ck.Seconds % 60 == 0;
+        var number = new TextBox { Width = 70, Height = 34, Text = (minutes ? ck.Seconds / 60 : ck.Seconds).ToString(), HorizontalContentAlignment = HorizontalAlignment.Right, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var unit = new ComboBox { Width = 110, Height = 34, Margin = new Thickness(0, 0, 8, 0) };
+        unit.Items.Add("seconds"); unit.Items.Add("minutes");
+        unit.SelectedIndex = minutes ? 1 : 0;
+        var key = new Button { Tag = ck, Width = 210, Height = 34, HorizontalContentAlignment = HorizontalAlignment.Left, Content = ck.Key.Length > 0 ? ck.Key : "None" };
+        key.Click += HotkeyButton_Click; key.PreviewKeyDown += HotkeyButton_PreviewKeyDown; key.LostKeyboardFocus += HotkeyButton_LostFocus;
+        var remove = new Button { Width = 34, Height = 34, Padding = new Thickness(0), Margin = new Thickness(6, 0, 0, 0), ToolTip = "Remove this hotkey", Content = new TextBlock { FontFamily = (FontFamily)FindResource("IconFont"), Text = "\uE711", FontSize = 12 } };
+        System.Windows.Automation.AutomationProperties.SetName(remove, "Remove this hotkey");
+        System.Windows.Automation.AutomationProperties.SetName(number, "Seconds or minutes to save");
+        System.Windows.Automation.AutomationProperties.SetName(unit, "Unit");
+        var note = new TextBlock { Style = (Style)FindResource("Caption"), Margin = new Thickness(0, 4, 0, 0), Visibility = Visibility.Collapsed };
+
+        void Update()
+        {
+            bool ok = int.TryParse(number.Text.Trim(), out int v) && v > 0 && v <= 100000;
+            number.BorderBrush = ok ? (Brush)FindResource("ControlStrokeColorDefaultBrush") : Brushes.IndianRed;
+            if (!ok) { note.Text = "Enter a number above 0."; note.Visibility = Visibility.Visible; return; }
+            ck.Seconds = unit.SelectedIndex == 1 ? v * 60 : v;
+            note.Text = ck.Seconds > _settings.BufferSeconds ? "Longer than the buffer: saves all of it." : "";
+            note.Visibility = note.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            Setting_Changed(number, new RoutedEventArgs());
+        }
+        number.TextChanged += (_, _) => { if (!_loading) Update(); };
+        unit.SelectionChanged += (_, _) => { if (!_loading) Update(); };
+        remove.Click += (_, _) => { _settings.ClipKeys.Remove(ck); RebuildClipKeys(); Setting_Changed(remove, new RoutedEventArgs()); };
+
+        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        line.Children.Add(new TextBlock { Text = "Save the last", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+        line.Children.Add(number); line.Children.Add(unit); line.Children.Add(key); line.Children.Add(remove);
+        if (ck.Seconds > _settings.BufferSeconds) { note.Text = "Longer than the buffer: saves all of it."; note.Visibility = Visibility.Visible; }
+        var row = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+        row.Children.Add(line); row.Children.Add(note);
+        return row;
+    }
+
+    private void AddClipKey_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.ClipKeys.Add(new ClipKey { Seconds = 30 });
+        RebuildClipKeys();
+        Setting_Changed(sender, e);
+    }
+
+    /// <summary>Shows each optional key (or "None") and only offers the clear button when one is set.</summary>
+    private void ShowOptionalKeys()
+    {
+        PauseHotkeyButton.Content = _settings.PauseHotkey is { Length: > 0 } p ? p : "None";
+        StopHotkeyButton.Content = _settings.StopHotkey is { Length: > 0 } t ? t : "None";
+        PauseHotkeyClear.Visibility = _settings.PauseHotkey.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StopHotkeyClear.Visibility = _settings.StopHotkey.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void HotkeyButton_Click(object sender, RoutedEventArgs e)
     {
+        var b = (Button)sender;
+        if (_capturing is not null && _capturing != b) EndCapture();
         _capturingKey = true;
-        HotkeyButton.Content = "Press a key…";
-        HotkeyButton.Focus();
+        _capturing = b;
+        b.Content = "Press a key…";
+        b.Focus();
     }
 
     private void HotkeyButton_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (!_capturingKey) return;
+        if (!_capturingKey || _capturing is null) return;
         e.Handled = true;
+        var b = _capturing;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key == Key.Escape) { EndCapture(); return; }
+        // Ctrl, Alt, Shift and the Windows key alone are not a hotkey: wait for the key they go with.
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.None) return;
 
         string? name = key switch
         {
@@ -835,17 +941,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             >= Key.D0 and <= Key.D9 => ((int)key - (int)Key.D0).ToString(),
             _ => null,
         };
-        if (name is null) { HotkeyButton.Content = "Use F1–F24, a letter, or a digit"; return; }
+        if (name is null) { b.Content = "Use F1–F24, a letter, or a digit"; return; }
+        var mods = Keyboard.Modifiers;
+        name = (mods.HasFlag(ModifierKeys.Control) ? "Ctrl+" : "") + (mods.HasFlag(ModifierKeys.Alt) ? "Alt+" : "") + (mods.HasFlag(ModifierKeys.Shift) ? "Shift+" : "") + name;
 
-        _settings.Hotkey = name;
-        HotkeyChip.Text = name;
+        object which = KeyOf(b);
+        SetKey(which, name);
+        if (which as string == "save") HotkeyChip.Text = name;
         EndCapture();
-        Setting_Changed(HotkeyButton, e);
+        Setting_Changed(b, e);
     }
 
-    private void HotkeyButton_LostFocus(object sender, KeyboardFocusChangedEventArgs e) { if (_capturingKey) EndCapture(); }
+    private void HotkeyButton_LostFocus(object sender, KeyboardFocusChangedEventArgs e) { if (_capturingKey && sender == _capturing) EndCapture(); }
 
-    private void EndCapture() { _capturingKey = false; HotkeyButton.Content = _settings.Hotkey; }
+    private void EndCapture()
+    {
+        _capturingKey = false;
+        if (_capturing is { } b) { object which = KeyOf(b); b.Content = GetKey(which) is { Length: > 0 } k ? k : "None"; }
+        _capturing = null;
+        ShowOptionalKeys();
+    }
+
+    private void HotkeyClear_Click(object sender, RoutedEventArgs e)
+    {
+        var b = (Button)sender;
+        SetKey(KeyOf(b), "");
+        ShowOptionalKeys();
+        Setting_Changed(b, e);
+    }
 
     // ---- layout / lifetime --------------------------------------------------
 

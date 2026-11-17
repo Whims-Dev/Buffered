@@ -8,7 +8,7 @@ public sealed record RecorderStatus(
     bool Recording, double BufferedSeconds, int BufferSeconds, double BufferedMb,
     long VramMb, double CpuPercent, int Width, int Height, int Fps, string Monitor, string? Error, bool Paused = false,
     string Audio = "", double GameLevel = 0, double MicLevel = 0, string Source = "Monitor",
-    bool Starting = false);
+    bool Starting = false, bool Stopped = false);
 
 public static class Ipc
 {
@@ -51,7 +51,13 @@ public static class Ipc
     public static async Task<bool> SoftReloadAsync() => await SendAsync("soft", 5000) == "ok";
 
     /// <summary>Stops recording and frees its VRAM. The buffered video is discarded.</summary>
-    public static async Task<bool> PauseAsync() => await SendAsync("pause", 15000) == "ok";
+    public static async Task<bool> StopAsync() => await SendAsync("stop", 15000) == "ok";
 
-    public static async Task<bool> ResumeAsync() => await SendAsync("resume", 15000) == "ok";
+    /// <summary>Starts recording again after a stop.</summary>
+    public static async Task<bool> StartAsync() => await SendAsync("start", 15000) == "ok";
+
+    /// <summary>Pauses recording: nothing is added to the buffer, and what is in it is kept.</summary>
+    public static async Task<bool> PauseAsync() => await SendAsync("pause", 5000) == "ok";
+
+    public static async Task<bool> ResumeAsync() => await SendAsync("resume", 5000) == "ok";
 }
