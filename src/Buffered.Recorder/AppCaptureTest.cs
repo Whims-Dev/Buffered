@@ -67,7 +67,7 @@ internal static class AppCaptureTest
 
     private sealed class Stats
     {
-        private long _bytes, _loudBlocks, _blocks; private double _peak;
+        private long _bytes, _blocks; private double _peak;
         private readonly List<double> _perSecondRms = new(); private double _sumSq; private long _n;
         public void Add(byte[] pcm16)
         {

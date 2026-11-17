@@ -258,8 +258,6 @@ internal sealed class AudioTrack : IDisposable
         _cap.RecordingStopped += OnStopped;
     }
 
-    private MMDevice? _volumeDevice;
-
     private void OnStopped(object? sender, StoppedEventArgs e) => Stopped = true;
 
     /// <summary>

@@ -81,7 +81,7 @@ internal sealed class HwEncoder : IDisposable
         foreach (var act in activates)
         {
             string encName = "?";
-            try { encName = act.GetAllocatedString(Guid.Parse("314ffbae-5b41-4c95-9c19-4e7d586face3")); } catch { }
+            try { encName = act.GetAllocatedString(Guid.Parse("314ffbae-5b41-4c95-9c19-4e7d586face3")) ?? "?"; } catch { }
             tried.Add(encName);
             IMFTransform? mft = null;
             try

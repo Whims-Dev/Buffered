@@ -476,7 +476,7 @@
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
-                                <StackPanel VerticalAlignment="Center"><TextBlock Text="Ignore Windows volume"/><TextBlock Text="Windows turns game audio down before it can be recorded, so a low volume makes clips quiet. This restores the full level." Style="{StaticResource Caption}" Margin="0,5,60,0" TextWrapping="Wrap"/></StackPanel>
+                                <StackPanel VerticalAlignment="Center"><TextBlock Text="Ignore Windows volume"/><TextBlock Text="Clips stay at full level even when your Windows volume is turned down (Windows would otherwise record the quieter sound)." Style="{StaticResource Caption}" Margin="0,5,60,0" TextWrapping="Wrap"/></StackPanel>
                                 <CheckBox x:Name="CompBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Ignore Windows volume for game audio"/>
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>

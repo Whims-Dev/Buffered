@@ -98,7 +98,7 @@ public sealed class RecorderEngine : IDisposable
                 catch (EncoderNotUsableException ex) { Note?.Invoke($"no encoder works on chip {i + 1}: {ex.Message}"); ResetAfterFailedStart(); }
                 catch (Exception ex) { Note?.Invoke($"chip {i + 1} did not work: {ex.Message}"); ResetAfterFailedStart(); }
             }
-            throw first;   // none of them worked: report the first problem
+            throw;   // none of them worked: report the first problem
         }
     }
 
