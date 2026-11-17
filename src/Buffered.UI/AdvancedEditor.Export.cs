@@ -93,7 +93,13 @@ public partial class AdvancedEditor
         foreach (var it in project.Items.Where(i => i.Kind == ItemKind.Image && GifAnimation.IsGif(i.Source)))
             if (GifFor(it.Source) is { } gif) sequences[it.Id] = WriteGifSequence(it, gif, choice.Fps, work);
 
-        var plan = ExportGraph.Build(project, options, i => _mixer.PathOf($"{i.Source}#{i.Stream}"), i => layers.TryGetValue(i.Id, out var p) ? p : null, _ => null,
+        // sound whose speed changes along the item is played out at that speed into a file of its own (ffmpeg can only change speed by a fixed amount)
+        var retimed = new Dictionary<Guid, string>();
+        foreach (var it in project.Items.Where(i => i.Kind == ItemKind.Audio && i.Props.HasKeys(KeyProp.Speed)))
+            if (_mixer.PathOf($"{it.Source}#{it.Stream}") is { } source)
+                retimed[it.Id] = await Task.Run(() => WriteRetimedSound(it, source, work));
+
+        var plan = ExportGraph.Build(project, options, i => retimed.TryGetValue(i.Id, out var r) ? r : _mixer.PathOf($"{i.Source}#{i.Stream}"), i => layers.TryGetValue(i.Id, out var p) ? p : null, _ => null,
             i => sequences.TryGetValue(i.Id, out var s) ? s : null);
         string temp = Path.Combine(Path.GetDirectoryName(choice.Path)!, "." + Path.GetFileNameWithoutExtension(choice.Path) + ".part.mp4");
 
@@ -152,6 +158,30 @@ public partial class AdvancedEditor
         catch (Exception ex) { return (false, ex.Message); }
     }
 
+    /// <summary>Plays a sound item out at the speed it has along the item and saves that as raw sound (48 kHz stereo 16-bit).</summary>
+    private static string WriteRetimedSound(TimelineItem it, string sourcePcm, string work)
+    {
+        const int rate = 48000;
+        string path = Path.Combine(work, "speed_" + it.Id.ToString("N") + ".pcm");
+        long first = (long)(it.SourceIn * rate), count = (long)Math.Ceiling((it.SourceOut - it.SourceIn) * rate) + 2;
+        var source = new byte[count * 4];
+        using (var fs = new FileStream(sourcePcm, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            fs.Position = Math.Min(fs.Length, first * 4);
+            int got = 0; while (got < source.Length) { int n = fs.Read(source, got, source.Length - got); if (n <= 0) break; got += n; }
+        }
+        long frames = (long)Math.Ceiling(it.Length * rate);
+        using var output = new BufferedStream(File.Create(path), 1 << 20);
+        var frame = new byte[4];
+        for (long n = 0; n < frames; n++)
+        {
+            long at = Math.Clamp((long)((it.Props.SourceAt(n / (double)rate)) * rate), 0, count - 1);   // the source frame heard at this moment
+            Buffer.BlockCopy(source, (int)(at * 4), frame, 0, 4);
+            output.Write(frame, 0, 4);
+        }
+        return path;
+    }
+
     private static string WriteGifSequence(TimelineItem it, GifAnimation gif, int fps, string work)
     {
         string dir = Path.Combine(work, "gif_" + it.Id.ToString("N"));
@@ -180,16 +210,16 @@ public partial class AdvancedEditor
     private void RenderTextLayer(TimelineItem it, int H, string path)
     {
         double k = H / Math.Max(1, Stage.Height);
-        double biggest = ExportGraph.TextRenderScale(it.Props);
+        double biggest = ExportGraph.TextRenderSize(it.Props);
         var tb = new TextBlock
         {
             Text = it.Props.Text ?? "", TextAlignment = TextAlignment.Center, FontWeight = FontWeights.Bold,
-            FontSize = Math.Max(4, H * it.Props.TextSize * biggest),
+            FontSize = Math.Max(4, H * biggest),
             Effect = new DropShadowEffect { BlurRadius = 6 * k, ShadowDepth = 1 * k, Opacity = 0.75 },
         };
         try { tb.Foreground = (Brush)new BrushConverter().ConvertFromString(it.Props.Color)!; } catch (FormatException) { tb.Foreground = Brushes.White; }
         tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        int pad = (int)Math.Ceiling(10 * k * Math.Max(1, biggest));
+        int pad = (int)Math.Ceiling(10 * k * Math.Max(1, biggest * 12));
         int W = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Width) + 2 * pad), Hh = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Height) + 2 * pad);
         W += W % 2; Hh += Hh % 2;
         var canvas = new Canvas { Width = W, Height = Hh, Background = Brushes.Transparent };

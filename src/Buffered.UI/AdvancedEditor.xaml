@@ -113,7 +113,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="PropsPanel" Margin="0,0,10,0">
                     <TextBlock x:Name="PropsTitle" Text="Nothing selected" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
                     <TextBlock x:Name="PropsHint" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" Text="Click an item on the timeline to change its opacity, volume and fades."/>
-                    <StackPanel x:Name="PropsBody" Visibility="Collapsed" Margin="0,10,0,0">
+                    <StackPanel x:Name="PropsBody" Visibility="Collapsed" Margin="12,10,10,4">
                         <DockPanel x:Name="OpacityRow" Margin="0,0,0,10"><Button x:Name="KeyOpacity" Tag="Opacity" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="OpacityValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Opacity"/></DockPanel>
                         <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel x:Name="VolumeRow" Margin="0,0,0,10"><Button x:Name="KeyVolume" Tag="Volume" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="VolumeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Volume"/></DockPanel>
@@ -122,12 +122,12 @@
                         <Slider x:Name="FadeInSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel Margin="0,0,0,10"><TextBlock x:Name="FadeOutValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade out"/></DockPanel>
                         <Slider x:Name="FadeOutSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                        <DockPanel x:Name="SpeedRow" Margin="0,0,0,10"><TextBlock x:Name="SpeedValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Speed"/></DockPanel>
+                        <DockPanel x:Name="SpeedRow" Margin="0,0,0,10"><Button x:Name="KeySpeed" Tag="Speed" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="SpeedValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Speed"/></DockPanel>
                         <Slider x:Name="SpeedSlider" Minimum="0.25" Maximum="4" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <StackPanel x:Name="WordsPanel">
                             <TextBlock Text="Words" Margin="0,0,0,4"/>
                             <TextBox x:Name="TextInput" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="120" Margin="0,0,0,10" TextChanged="TextInput_Changed"/>
-                            <DockPanel Margin="0,0,0,10"><TextBlock x:Name="SizeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Size"/></DockPanel>
+                            <DockPanel Margin="0,0,0,10"><Button x:Name="KeySize" Tag="TextSize" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="SizeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Size"/></DockPanel>
                             <Slider x:Name="SizeSlider" Minimum="2" Maximum="30" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                             <TextBlock Text="Colour" Margin="0,0,0,6"/>
                             <WrapPanel x:Name="Swatches" Margin="0,0,0,10"/>

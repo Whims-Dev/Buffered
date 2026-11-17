@@ -203,7 +203,7 @@ public partial class AdvancedEditor : UserControl
     {
         var lanes = proj.Tracks.Where(t => !t.Muted)
             .SelectMany(t => t.Items).Where(i => i.Kind == ItemKind.Audio)
-            .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Props.FadeIn, i.Props.FadeOut, i.Props.HasKeys(KeyProp.Volume) ? i.Props.FramesOf(KeyProp.Volume).ToArray() : null)).ToArray();
+            .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Props.FadeIn, i.Props.FadeOut, i.Props.HasKeys(KeyProp.Volume) ? i.Props.FramesOf(KeyProp.Volume).ToArray() : null, i.Props)).ToArray();
         _mixer.SetLanes(lanes);
     }
 
@@ -296,7 +296,7 @@ public partial class AdvancedEditor : UserControl
         }
         EmptyText.Visibility = Visibility.Collapsed;
         _activeId = active.Id;
-        double expected = active.SourceIn + (t - active.Start) * active.Props.Speed;
+        double expected = active.SourceIn + active.Props.SourceAt(t - active.Start);
         _lastExpected = expected;
 
         if (_src != active.Source)
@@ -308,7 +308,8 @@ public partial class AdvancedEditor : UserControl
         }
         else
         {
-            if (Math.Abs(active.Props.Speed - _lastSpeed) > 1e-6) { Video.SpeedRatio = active.Props.Speed; _lastSpeed = active.Props.Speed; }
+            double speedNow = active.Props.ValueAt(KeyProp.Speed, t - active.Start);   // follows the speed line while it plays
+            if (Math.Abs(speedNow - _lastSpeed) > (active.Props.HasKeys(KeyProp.Speed) ? 0.01 : 1e-6)) { Video.SpeedRatio = speedNow; _lastSpeed = speedNow; }
             double drift = Math.Abs(Video.Position.TotalSeconds - expected);
             if (seek || (_playing && !_waiting && drift > 0.35))
             {
@@ -541,8 +542,8 @@ public partial class AdvancedEditor : UserControl
             OpacitySlider.Value = it.Props.ValueAt(KeyProp.Opacity, at) * 100;
             VolumeSlider.Value = it.Props.ValueAt(KeyProp.Volume, at) * 100;
             FadeInSlider.Value = it.Props.FadeIn; FadeOutSlider.Value = it.Props.FadeOut;
-            SpeedSlider.Value = it.Props.Speed;
-            SizeSlider.Value = it.Props.TextSize * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
+            SpeedSlider.Value = it.Props.ValueAt(KeyProp.Speed, at);
+            SizeSlider.Value = it.Props.ValueAt(KeyProp.TextSize, at) * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
             PosXSlider.Value = it.Props.ValueAt(KeyProp.PosX, at) * 100; PosYSlider.Value = it.Props.ValueAt(KeyProp.PosY, at) * 100;
             UpdateKeyButtons(it, at);
             if (TextInput.Text != (it.Props.Text ?? "") && !TextInput.IsKeyboardFocusWithin) TextInput.Text = it.Props.Text ?? "";
@@ -574,7 +575,7 @@ public partial class AdvancedEditor : UserControl
         {
             if (animated is { } kp && next.Find(id) is { } target && target.Props.HasKeys(kp))
             {
-                next = next.SetKey(id, kp, _t, ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
+                next = next.SetKey(id, kp, _t, kp == KeyProp.Speed ? ((Slider)sender).Value : ((Slider)sender).Value / 100);   // the property is animated: the slider sets a keyframe here instead
                 continue;
             }
             next = next.SetProps(id, o =>

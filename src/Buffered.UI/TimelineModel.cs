@@ -15,7 +15,7 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
     double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null)
 {
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
-    public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, _ => Scale };
+    public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, _ => Scale };
 
     public bool HasKeys(KeyProp p) => Keys?.Any(k => k.Prop == p && k.Frames.Count > 0) == true;
 
@@ -38,7 +38,8 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
 
     public static double Limit(KeyProp p, double v) => p switch
     {
-        KeyProp.Opacity => Math.Clamp(v, 0, 1), KeyProp.Volume => Math.Clamp(v, 0, 2), KeyProp.PosX or KeyProp.PosY => Math.Clamp(v, 0, 1), _ => Math.Clamp(v, 0.05, 6),
+        KeyProp.Opacity => Math.Clamp(v, 0, 1), KeyProp.Volume => Math.Clamp(v, 0, 2), KeyProp.PosX or KeyProp.PosY => Math.Clamp(v, 0, 1),
+        KeyProp.Speed => Math.Clamp(v, 0.1, 8), KeyProp.TextSize => Math.Clamp(v, 0.02, 0.5), _ => Math.Clamp(v, 0.05, 6),
     };
 
     private ItemProps WithFrames(KeyProp p, ImmutableList<Keyframe> frames)
@@ -67,6 +68,47 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
 
     public ItemProps ClearKeys(KeyProp p) => WithFrames(p, ImmutableList<Keyframe>.Empty);
 
+    /// <summary>How the speed changes along an item, as the times where it bends (from the start, in seconds) with the speed at each.</summary>
+    private List<(double T, double V)> SpeedPoints(double upTo)
+    {
+        var points = new List<(double, double)> { (0, ValueAt(KeyProp.Speed, 0)) };
+        foreach (var f in FramesOf(KeyProp.Speed)) if (f.Time > 1e-9 && f.Time < upTo - 1e-9) points.Add((f.Time, f.Value));
+        points.Add((upTo, ValueAt(KeyProp.Speed, upTo)));
+        return points;
+    }
+
+    /// <summary>How many seconds of the source have been played <paramref name="t"/> seconds into the item (the area under the speed line). With a steady speed this is just speed times time.</summary>
+    public double SourceAt(double t)
+    {
+        if (!HasKeys(KeyProp.Speed) || t <= 0) return (HasKeys(KeyProp.Speed) ? ValueAt(KeyProp.Speed, 0) : Speed) * t;
+        var pts = SpeedPoints(t);
+        double total = 0;
+        for (int i = 1; i < pts.Count; i++) total += (pts[i - 1].V + pts[i].V) / 2 * (pts[i].T - pts[i - 1].T);
+        return total;
+    }
+
+    /// <summary>The opposite of <see cref="SourceAt"/>: how many seconds into the item <paramref name="source"/> seconds of the source have been played.</summary>
+    public double OutAt(double source)
+    {
+        if (!HasKeys(KeyProp.Speed)) return source / Math.Max(0.01, Speed);
+        var frames = FramesOf(KeyProp.Speed);
+        double a = 0, va = ValueAt(KeyProp.Speed, 0), played = 0;
+        foreach (var next in frames.Select(f => f.Time).Where(t => t > 1e-9).Append(double.PositiveInfinity))
+        {
+            if (double.IsPositiveInfinity(next))   // after the last keyframe the speed stays the same
+                return a + (source - played) / Math.Max(0.01, va);
+            double vb = ValueAt(KeyProp.Speed, next), span = next - a, area = (va + vb) / 2 * span;
+            if (played + area >= source)
+            {
+                double extra = source - played, k = (vb - va) / span;
+                double tau = Math.Abs(k) < 1e-9 ? extra / Math.Max(0.01, va) : (-va + Math.Sqrt(Math.Max(0, va * va + 2 * k * extra))) / k;
+                return a + Math.Clamp(tau, 0, span);
+            }
+            played += area; a = next; va = vb;
+        }
+        return a;
+    }
+
     /// <summary>The keyframes of the part of an item that starts <paramref name="from"/> seconds in and is <paramref name="length"/> seconds long, with times counted from its new start.</summary>
     public ItemProps Slice(double from, double length)
     {
@@ -88,7 +130,7 @@ public sealed record ItemProps(double Opacity = 1, double Volume = 1, double Fad
 }
 
 /// <summary>A property that can change over the time an item is on the timeline.</summary>
-public enum KeyProp { Opacity, Volume, PosX, PosY, Scale }
+public enum KeyProp { Opacity, Volume, PosX, PosY, Scale, Speed, TextSize }
 
 /// <summary>A value a property has at a moment, counted in seconds from the start of the item.</summary>
 public sealed record Keyframe(double Time, double Value);
@@ -99,7 +141,7 @@ public sealed record KeyTrack(KeyProp Prop, ImmutableList<Keyframe> Frames);
 public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double SourceIn, double SourceOut, double Start, ItemProps Props, Guid? LinkId = null, string? Label = null, int Stream = 0)
 {
     /// <summary>How long it lasts on the timeline (a faster item is shorter).</summary>
-    [JsonIgnore] public double Length => (SourceOut - SourceIn) / Math.Max(0.01, Props.Speed);
+    [JsonIgnore] public double Length => Props.OutAt(SourceOut - SourceIn);
     [JsonIgnore] public double End => Start + Length;
 }
 
@@ -177,7 +219,7 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
             if (time <= part.Start + MinLength || time >= part.End - MinLength) continue;
             int tr = p.TrackOf(part.Id);
             if (tr < 0 || p.Tracks[tr].Locked) continue;
-            double cut = part.SourceIn + (time - part.Start) * part.Props.Speed;
+            double cut = part.SourceIn + part.Props.SourceAt(time - part.Start);
             double leftLen = time - part.Start, rightLen = part.End - time;
             var left = part with { SourceOut = cut, Props = part.Props.Slice(0, leftLen) with { FadeOut = 0 } };
             var right = part with { Id = Guid.NewGuid(), SourceIn = cut, Start = time, Props = part.Props.Slice(leftLen, rightLen) with { FadeIn = 0 }, LinkId = rightLink };
@@ -196,21 +238,21 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
         if (tr < 0 || Tracks[tr].Locked) return this;
         var item = Tracks[tr].Items.First(i => i.Id == id);
         var others = Tracks[tr].Items.Where(i => i.Id != id).ToList();
-        double speed = item.Props.Speed;
+        double speed = Math.Max(0.1, item.Props.ValueAt(KeyProp.Speed, 0));
         TimelineItem result;
         if (leftEdge)
         {
             double floor = others.Where(o => o.End <= item.Start + 1e-9).Select(o => o.End).DefaultIfEmpty(0).Max();
             floor = Math.Max(floor, item.Start - item.SourceIn / speed);                 // cannot reveal footage before the source begins
             double t = Math.Clamp(time, floor, item.End - MinLength);
-            result = item with { Start = t, SourceIn = item.SourceIn + (t - item.Start) * speed, Props = item.Props.ShiftKeys(-(t - item.Start)) };   // the animation stays with the picture
+            result = item with { Start = t, SourceIn = item.SourceIn + item.Props.SourceAt(t - item.Start), Props = item.Props.ShiftKeys(-(t - item.Start)) };   // the animation stays with the picture
         }
         else
         {
             double ceil = others.Where(o => o.Start >= item.End - 1e-9).Select(o => o.Start).DefaultIfEmpty(double.PositiveInfinity).Min();
-            ceil = Math.Min(ceil, item.Start + (sourceLength - item.SourceIn) / speed);   // nor past its end
+            ceil = Math.Min(ceil, item.Start + item.Props.OutAt(sourceLength - item.SourceIn));   // nor past its end
             double t = Math.Clamp(time, item.Start + MinLength, ceil);
-            result = item with { SourceOut = item.SourceIn + (t - item.Start) * speed };
+            result = item with { SourceOut = item.SourceIn + item.Props.SourceAt(t - item.Start) };
         }
         return Replace(tr, l => l.Remove(item).Add(result));
     }

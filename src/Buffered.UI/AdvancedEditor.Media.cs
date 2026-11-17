@@ -357,7 +357,7 @@ public partial class AdvancedEditor
                 if (box.Child is not TextBlock tb)
                     box.Child = tb = new TextBlock { TextAlignment = TextAlignment.Center, FontWeight = FontWeights.Bold, Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.75 } };
                 tb.Text = it.Props.Text ?? "";
-                tb.FontSize = Math.Max(4, H * it.Props.TextSize * scale);
+                tb.FontSize = Math.Max(4, H * it.Props.ValueAt(KeyProp.TextSize, at) * scale);
                 try { tb.Foreground = (Brush)new BrushConverter().ConvertFromString(it.Props.Color)!; } catch (FormatException) { tb.Foreground = Brushes.White; }
             }
             else

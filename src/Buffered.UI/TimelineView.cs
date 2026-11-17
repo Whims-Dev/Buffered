@@ -185,13 +185,27 @@ public sealed class TimelineView : FrameworkElement
                     ft.MaxTextWidth = Math.Max(1, r.Width - 12); ft.MaxLineCount = 1; ft.Trimming = TextTrimming.CharacterEllipsis;
                     if (it.Kind == ItemKind.Video && Thumbs.ContainsKey(it.Source)) dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), null, new Rect(r.X + 3, top + 4 * F, Math.Min(r.Width - 6, ft.WidthIncludingTrailingWhitespace + 8), ft.Height + 2), 3, 3);
                     dc.DrawText(ft, new Point(r.X + 7, top + 4 * F));
-                    if (it.Props.Speed != 1 || it.Props.Opacity < 1 || it.Props.Volume != 1 && it.Kind == ItemKind.Audio)
+                    bool speedKeyed = it.Props.HasKeys(KeyProp.Speed);
+                    if (it.Props.Speed != 1 || speedKeyed || it.Props.Opacity < 1 || it.Props.Volume != 1 && it.Kind == ItemKind.Audio)
                     {
-                        string note = (it.Props.Speed != 1 ? $"{it.Props.Speed:0.##}x  " : "") + (it.Props.Opacity < 1 ? $"{it.Props.Opacity * 100:0}% opacity  " : "") + (it.Kind == ItemKind.Audio && it.Props.Volume != 1 ? $"{it.Props.Volume * 100:0}% volume" : "");
+                        string speedNote = speedKeyed ? $"{it.Props.FramesOf(KeyProp.Speed).Min(f => f.Value):0.##}–{it.Props.FramesOf(KeyProp.Speed).Max(f => f.Value):0.##}x  " : it.Props.Speed != 1 ? $"{it.Props.Speed:0.##}x  " : "";
+                        string note = speedNote + (it.Props.Opacity < 1 ? $"{it.Props.Opacity * 100:0}% opacity  " : "") + (it.Kind == ItemKind.Audio && it.Props.Volume != 1 ? $"{it.Props.Volume * 100:0}% volume" : "");
                         var nt = Fmt(note.Trim(), 10 * F, new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)));
                         nt.MaxTextWidth = Math.Max(1, r.Width - 12); nt.MaxLineCount = 1; nt.Trimming = TextTrimming.CharacterEllipsis;
                         dc.DrawText(nt, new Point(r.X + 6, top + 19 * F));
                     }
+                }
+                if (it.Props.HasKeys(KeyProp.Speed) && r.Width > 30)   // the speed line: higher is faster, the dashed line is normal speed
+                {
+                    var frames = it.Props.FramesOf(KeyProp.Speed);
+                    double top2 = Math.Max(2, frames.Max(f => f.Value)) * 1.1, bottom = top + LaneHeight - 9 * F, rise = LaneHeight - 18 * F;
+                    double Y(double v) => bottom - Math.Clamp(v / top2, 0, 1) * rise;
+                    var pts = new List<Point> { new(Math.Max(x0, HeaderWidth), Y(it.Props.ValueAt(KeyProp.Speed, Math.Max(0, T(HeaderWidth) - it.Start)))) };
+                    foreach (var f in frames) { double fx = X(it.Start + f.Time); if (fx > pts[0].X && fx < Math.Min(x1, w)) pts.Add(new Point(fx, Y(f.Value))); }
+                    pts.Add(new Point(Math.Min(x1, w), Y(it.Props.ValueAt(KeyProp.Speed, Math.Min(it.Length, T(w) - it.Start)))));
+                    var curve = new Pen(new SolidColorBrush(Color.FromArgb(215, 255, 255, 255)), 1.6) { LineJoin = PenLineJoin.Round };
+                    dc.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)), 1) { DashStyle = DashStyles.Dash }, new Point(Math.Max(x0, HeaderWidth), Y(1)), new Point(Math.Min(x1, w), Y(1)));
+                    for (int pi = 1; pi < pts.Count; pi++) dc.DrawLine(curve, pts[pi - 1], pts[pi]);
                 }
                 if (it.Props.Keys is { Count: > 0 })   // keyframes: a small diamond for each moment something is animated
                 {
@@ -324,7 +338,7 @@ public sealed class TimelineView : FrameworkElement
         for (double x = r.Left; x < r.Right; x += tileW)
         {
             double t = Math.Max(it.Start, T(x + tileW / 2));
-            double src = it.SourceIn + (t - it.Start) * it.Props.Speed;
+            double src = it.SourceIn + it.Props.SourceAt(t - it.Start);
             int i = Array.BinarySearch(set.Times, src); if (i < 0) i = Math.Max(0, ~i - 1);
             if (Picture(set, Math.Min(i, set.Times.Length - 1)) is { } img) dc.DrawImage(img, new Rect(x, r.Y + 1, tileW, h));
         }
@@ -342,12 +356,11 @@ public sealed class TimelineView : FrameworkElement
         const double stepPx = 2;
         var g = new StreamGeometry();
         var tops = new List<Point>(); var bottoms = new List<Point>();
-        double pxPerBin = WaveBinSeconds * _pps / it.Props.Speed;
         for (double x = r.Left; x <= r.Right + stepPx; x += stepPx)
         {
             double xx = Math.Min(x, r.Right);
-            double src = it.SourceIn + (T(xx) - it.Start) * it.Props.Speed;
-            int b0 = (int)Math.Max(0, src / WaveBinSeconds), b1 = (int)Math.Max(b0, (src + stepPx / _pps * it.Props.Speed) / WaveBinSeconds);
+            double src = it.SourceIn + it.Props.SourceAt(T(xx) - it.Start), srcNext = it.SourceIn + it.Props.SourceAt(T(xx) + stepPx / _pps - it.Start);
+            int b0 = (int)Math.Max(0, src / WaveBinSeconds), b1 = (int)Math.Max(b0, srcNext / WaveBinSeconds);
             float peak = 0;
             for (int b = b0; b <= b1 && b < wave.Length; b++) if (wave[b] > peak) peak = wave[b];
             double h = Math.Min(1, Math.Sqrt(peak) * Math.Min(2, it.Props.Volume)) * half;   // square root so quiet speech still shows

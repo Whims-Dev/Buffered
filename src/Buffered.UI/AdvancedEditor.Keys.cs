@@ -10,13 +10,13 @@ public partial class AdvancedEditor
 {
     private KeyProp? KeyPropOf(object? sender) =>
         sender == OpacitySlider ? KeyProp.Opacity : sender == VolumeSlider ? KeyProp.Volume : sender == ScaleSlider ? KeyProp.Scale :
-        sender == PosXSlider ? KeyProp.PosX : sender == PosYSlider ? KeyProp.PosY : null;
+        sender == PosXSlider ? KeyProp.PosX : sender == PosYSlider ? KeyProp.PosY : sender == SpeedSlider ? KeyProp.Speed : sender == SizeSlider ? KeyProp.TextSize : null;
 
     private static KeyProp? FromTag(object? sender) => (sender as FrameworkElement)?.Tag is string t && Enum.TryParse<KeyProp>(t, out var p) ? p : null;
 
     private static readonly Dictionary<KeyProp, string> Names = new()
     {
-        [KeyProp.Opacity] = "opacity", [KeyProp.Volume] = "volume", [KeyProp.Scale] = "scale", [KeyProp.PosX] = "position across", [KeyProp.PosY] = "position down",
+        [KeyProp.Opacity] = "opacity", [KeyProp.Volume] = "volume", [KeyProp.Scale] = "scale", [KeyProp.PosX] = "position across", [KeyProp.PosY] = "position down", [KeyProp.Speed] = "speed", [KeyProp.TextSize] = "text size",
     };
 
     /// <summary>Sets a property of an item: as a keyframe at the playhead if the property is animated, otherwise as its plain value.</summary>
@@ -26,14 +26,14 @@ public partial class AdvancedEditor
         return it.Props.HasKeys(prop) ? p.SetKey(id, prop, _t, value) : p.SetProps(id, o => prop switch
         {
             KeyProp.Opacity => o with { Opacity = value }, KeyProp.Volume => o with { Volume = value }, KeyProp.Scale => o with { Scale = value },
-            KeyProp.PosX => o with { PosX = value }, _ => o with { PosY = value },
+            KeyProp.PosX => o with { PosX = value }, KeyProp.Speed => o with { Speed = value }, KeyProp.TextSize => o with { TextSize = value }, _ => o with { PosY = value },
         });
     }
 
     /// <summary>A filled diamond when there is a keyframe at the playhead, an outline one when the property is animated elsewhere, a dim outline when it is not animated.</summary>
     private void UpdateKeyButtons(TimelineItem it, double at)
     {
-        foreach (var (button, prop) in new[] { (KeyOpacity, KeyProp.Opacity), (KeyVolume, KeyProp.Volume), (KeyScale, KeyProp.Scale), (KeyPosX, KeyProp.PosX), (KeyPosY, KeyProp.PosY) })
+        foreach (var (button, prop) in new[] { (KeyOpacity, KeyProp.Opacity), (KeyVolume, KeyProp.Volume), (KeyScale, KeyProp.Scale), (KeyPosX, KeyProp.PosX), (KeyPosY, KeyProp.PosY), (KeySpeed, KeyProp.Speed), (KeySize, KeyProp.TextSize) })
         {
             bool animated = it.Props.HasKeys(prop), here = animated && it.Props.FramesOf(prop).Any(f => Math.Abs(f.Time - at) < 0.03);
             button.Content = here ? "\u25C6" : "\u25C7";

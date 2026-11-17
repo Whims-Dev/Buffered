@@ -50,6 +50,21 @@ if (haveFfmpeg && File.Exists(clip))
     Check(ExportGraph.ExtraFiltersFor(ap0).Contains("sendcmd") && !ExportGraph.ExtraFiltersFor(Project.Empty()).Any(), "it says which extra filter it needs");
     int code = Run2("ffmpeg", ExportGraph.Arguments(animated, o, outp, false).ToArray());
     Check(code == 0 && File.Exists(outp), "ffmpeg makes the animated video");
+
+    // a speed ramp: 1x at the start rising to 3x at 2 seconds, over 5 seconds of the clip (so it plays in less than 5 seconds), and text whose size is animated
+    var sp = new ItemProps().WithKey(KeyProp.Speed, 0, 1).WithKey(KeyProp.Speed, 2, 3);
+    var sv = V(0, 0, 5, clip, sp);                         // Length = time to play 5 seconds of source at that speed
+    var tpp = new ItemProps(Text: "Hi").WithKey(KeyProp.TextSize, 0, 0.04).WithKey(KeyProp.TextSize, 2, 0.12);
+    var tx = new TimelineItem(Guid.NewGuid(), ItemKind.Text, "", 0, 2, 0, tpp);
+    var sproj = Project.Empty((TrackKind.Text, "T"), (TrackKind.Video, "V")).Add(1, sv)!.Add(0, tx)!;
+    string spOut = Path.Combine(dir, "speed.mp4");
+    var splan = ExportGraph.Build(sproj, o, _ => null, i => png, s => null);
+    Check(splan.FilterGraph.Contains("sqrt(") && Math.Abs(sv.Length - (2 + (5 - 4) / 3.0)) < 1e-6, "the speed ramp gives a retiming expression, and the item is as long as the ramp says");
+    int code2 = Run2("ffmpeg", ExportGraph.Arguments(splan, o, spOut, false).ToArray());
+    Check(code2 == 0 && File.Exists(spOut), "ffmpeg makes the video with a speed ramp and animated text size");
+    var pp = new ProcessStartInfo("ffprobe", $"-v error -show_entries format=duration -of csv=p=0 \"{spOut}\"") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
+    using var ppp = Process.Start(pp)!; string spDur = ppp.StandardOutput.ReadToEnd().Trim(); ppp.WaitForExit();
+    Check(double.TryParse(spDur, System.Globalization.CultureInfo.InvariantCulture, out var spd) && Math.Abs(spd - sproj.Duration) < 0.4, $"and the video is as long as the ramped item ({spDur} s, expected {sproj.Duration:0.00})");
     Run2("ffmpeg", "-y", "-loglevel", "error", "-ss", "0.2", "-i", outp, "-frames:v", "1", "-vf", "scale=480:-2", Path.Combine(dir, "anim_a.png"));
     Run2("ffmpeg", "-y", "-loglevel", "error", "-ss", "2.8", "-i", outp, "-frames:v", "1", "-vf", "scale=480:-2", Path.Combine(dir, "anim_b.png"));
 }
