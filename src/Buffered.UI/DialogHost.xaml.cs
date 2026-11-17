@@ -39,6 +39,29 @@ public partial class DialogHost : UserControl
         finally { _one.Release(); }
     }
 
+    private bool _thirdPicked;
+
+    /// <summary>A question with three answers: returns 1 for the main button, 2 for the middle one (for example "Don't save") and 0 for Cancel (also Escape).</summary>
+    public async Task<int> ChoiceAsync(string title, string message, string confirmText, string middleText, string cancelText = "Cancel")
+    {
+        await _one.WaitAsync();
+        try
+        {
+            TitleText.Text = title;
+            MessageText.Text = message;
+            CancelButton.Content = cancelText; CancelButton.Visibility = Visibility.Visible;
+            ThirdButton.Content = middleText; ThirdButton.Visibility = Visibility.Visible; _thirdPicked = false;
+            ConfirmButton.Content = confirmText;
+            ConfirmButton.Style = (Style)FindResource("PrimaryButton");
+            bool ok = await ShowAsync();
+            ThirdButton.Visibility = Visibility.Collapsed;
+            return _thirdPicked ? 2 : ok ? 1 : 0;
+        }
+        finally { _one.Release(); }
+    }
+
+    private void Third_Click(object sender, RoutedEventArgs e) { _thirdPicked = true; Close(true); }
+
     /// <summary>Like <see cref="ConfirmAsync"/>, with a checkbox. Returns whether the user confirmed and whether the box was ticked.</summary>
     public async Task<(bool Ok, bool Option)> ConfirmWithOptionAsync(string title, string message, string confirmText, string optionText, bool danger = false)
     {

@@ -4,6 +4,7 @@
         xmlns:local="clr-namespace:Buffered.UI"
         Title="Buffered" Width="1000" Height="720" MinWidth="860" MinHeight="580"
         WindowStartupLocation="CenterScreen" ThemeMode="System"
+        AllowDrop="True" DragEnter="Window_DragOver" DragOver="Window_DragOver" DragLeave="Window_DragLeave" Drop="Window_Drop"
         SizeChanged="Window_SizeChanged" Closed="Window_Closed">
     <Window.Resources>
         <!-- The small revert arrow next to a game setting that has been changed -->
@@ -95,6 +96,8 @@
                 <Image Source="/Assets/logo.png" Width="34" Height="34" Margin="0,0,0,16" RenderOptions.BitmapScalingMode="HighQuality"/>
                 <RadioButton x:Name="NavClips" GroupName="nav" Style="{StaticResource NavButton}" Content="&#xE80A;" IsChecked="True"
                              ToolTip="Clips" AutomationProperties.Name="Clips" Checked="Nav_Checked"/>
+                <RadioButton x:Name="NavEditor" GroupName="nav" Style="{StaticResource NavButton}" Content="&#xE70F;"
+                             ToolTip="Editor" AutomationProperties.Name="Editor" Checked="Nav_Checked"/>
                 <RadioButton x:Name="NavSettings" GroupName="nav" Style="{StaticResource NavButton}" Content="&#xE713;"
                              ToolTip="Settings" AutomationProperties.Name="Settings" Checked="Nav_Checked"/>
             </StackPanel>
@@ -162,10 +165,13 @@
                         <TextBlock Text="Clips" FontSize="22" FontWeight="SemiBold"/>
                         <TextBlock x:Name="ClipMeta" Style="{StaticResource Caption}" Margin="0,6,0,0"/>
                     </StackPanel>
-                    <Grid Grid.Column="1" Width="200" Height="36" Margin="0,0,10,0" VerticalAlignment="Center">
-                        <TextBox x:Name="SearchBox" VerticalContentAlignment="Center" TextChanged="SearchBox_TextChanged"/>
-                        <TextBlock x:Name="SearchHint" Text="Search clips" IsHitTestVisible="False" Opacity="0.5" VerticalAlignment="Center" Margin="11,0,0,0"/>
-                    </Grid>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ComboBox x:Name="SortBox" Width="140" Height="36" Margin="0,0,10,0" SelectionChanged="SortBox_Changed" AutomationProperties.Name="Sort clips"/>
+                        <Grid Width="200" Height="36" Margin="0,0,10,0" VerticalAlignment="Center">
+                            <TextBox x:Name="SearchBox" VerticalContentAlignment="Center" TextChanged="SearchBox_TextChanged"/>
+                            <TextBlock x:Name="SearchHint" Text="Search clips" IsHitTestVisible="False" Opacity="0.5" VerticalAlignment="Center" Margin="11,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
                     <Button x:Name="SaveButton" Grid.Column="2" Height="36" Padding="14,0" VerticalAlignment="Center" Style="{StaticResource PrimaryButton}"
                             AutomationProperties.Name="Save clip" Click="SaveButton_Click">
                         <StackPanel Orientation="Horizontal">
@@ -414,7 +420,7 @@
                                         <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Game volume"/><TextBlock x:Name="GameGainStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameGainNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Button x:Name="GameGainRevert" Tag="game" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert game volume"/>
-                                            <Slider x:Name="GameGainSlider2" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameGain_Changed" AutomationProperties.Name="Game volume for this game as a percentage"/>
+                                            <Slider x:Name="GameGainSlider2" Style="{StaticResource MeterSlider}" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameGain_Changed" AutomationProperties.Name="Game volume for this game as a percentage"/>
                                             <TextBlock x:Name="GameGainValue" Width="76" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Grid>
@@ -425,7 +431,7 @@
                                         <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><StackPanel Orientation="Horizontal"><TextBlock Text="Mic volume"/><TextBlock x:Name="GameMicStar" Text="*" Foreground="#E0B84A" FontWeight="SemiBold" Margin="3,0,0,0" Visibility="Collapsed"/></StackPanel><TextBlock x:Name="GameMicNow" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Button x:Name="GameMicRevert" Tag="mic" Style="{StaticResource RevertButton}" Click="GameRevert_Click" AutomationProperties.Name="Revert mic volume"/>
-                                            <Slider x:Name="GameMicSlider2" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameMic_Changed" AutomationProperties.Name="Mic volume for this game as a percentage"/>
+                                            <Slider x:Name="GameMicSlider2" Style="{StaticResource MeterSlider}" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="GameMic_Changed" AutomationProperties.Name="Mic volume for this game as a percentage"/>
                                             <TextBlock x:Name="GameMicValue" Width="76" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Grid>
@@ -537,7 +543,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><TextBlock Text="Volume in new clips"/><TextBlock Text="Louder or quieter than it plays on your speakers" Style="{StaticResource Caption}" Margin="0,5,0,0"/></StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Slider x:Name="AppGainSlider" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="AppGain_Changed" AutomationProperties.Name="App volume as a percentage"/>
+                                            <Slider x:Name="AppGainSlider" Style="{StaticResource MeterSlider}" Width="200" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="AppGain_Changed" AutomationProperties.Name="App volume as a percentage"/>
                                             <TextBlock x:Name="AppGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                         </StackPanel>
                                     </Grid>
@@ -553,7 +559,7 @@
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,330,0"><TextBlock Text="Game volume"/><TextBlock Text="Louder or quieter game sound in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="GameGainSlider" Width="230" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                    <Slider x:Name="GameGainSlider" Style="{StaticResource MeterSlider}" Width="230" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
                                             ValueChanged="Gain_Changed" AutomationProperties.Name="Game volume as a percentage"/>
                                     <TextBlock x:Name="GameGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                 </StackPanel>
@@ -562,7 +568,7 @@
                             <Grid Margin="18,12">
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,330,0"><TextBlock Text="Mic volume"/><TextBlock Text="Louder or quieter microphone in new clips. Applies to your next clip." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Slider x:Name="MicGainSlider" Width="230" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                    <Slider x:Name="MicGainSlider" Style="{StaticResource MeterSlider}" Width="230" Minimum="0" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
                                             ValueChanged="Gain_Changed" AutomationProperties.Name="Microphone volume as a percentage"/>
                                     <TextBlock x:Name="MicGainText" Width="64" TextAlignment="Right" VerticalAlignment="Center" FontSize="12" Opacity="0.8" Margin="8,0,0,0"/>
                                 </StackPanel>
@@ -669,6 +675,11 @@
                             </Grid>
                             <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
                             <Grid Margin="18,12">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,60,0"><TextBlock Text="Open the editor straight away"/><TextBlock Text="Off: clicking a clip opens a preview with an Edit button. On: clicking a clip opens the editor, like before." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                                <CheckBox x:Name="ClickEditorBox" Style="{StaticResource SwitchBox}" HorizontalAlignment="Right" Checked="Setting_Changed" Unchecked="Setting_Changed" AutomationProperties.Name="Open the editor straight away"/>
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                            <Grid Margin="18,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,24,0"><TextBlock Text="Arrow key seek"/><TextBlock Text="How far the left and right arrow keys move the playhead in the editor, on their own and with Shift held. The comma and period keys always move one frame." Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -760,6 +771,7 @@
 
             <!-- Player and trimmer: covers the content area while a clip is open -->
             <local:ClipPlayer x:Name="Player" Visibility="Collapsed"/>
+            <local:AdvancedEditor x:Name="Advanced" Visibility="Collapsed"/>
         </Grid>
 
         <!-- Status bar -->
@@ -797,7 +809,7 @@
                     <TextBlock x:Name="BufferText" FontSize="12" Opacity="0.8" VerticalAlignment="Center"/>
                     <ProgressBar x:Name="BufferBar" Width="96" Height="4" Margin="10,0,0,0" Maximum="100" VerticalAlignment="Center"/>
                 </StackPanel>
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel x:Name="StatsPanel" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Background="Transparent">
 <Border x:Name="MetersHost">
                                         <StackPanel x:Name="AudioMeters" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0" Visibility="Collapsed"
                                 ToolTip="Live audio levels. If Game stays empty while you can hear sound, the wrong output device is being recorded.">
@@ -807,11 +819,23 @@
                         <ProgressBar x:Name="MicMeter" Width="44" Height="4" Maximum="100"/>
                     </StackPanel>
                     </Border>
+                    <TextBlock x:Name="RamText" FontSize="12" Opacity="0.8" Margin="0,0,18,0"/>
                     <TextBlock x:Name="VramText" FontSize="12" Opacity="0.8" Margin="0,0,18,0"/>
                     <TextBlock x:Name="CpuText" FontSize="12" Opacity="0.8" Margin="0,0,18,0"/>
                     <TextBlock x:Name="QualityText" FontSize="12" Opacity="0.8"/>
                 </StackPanel>
             </Grid>
+        </Border>
+
+        <!-- Shown while a saved edit is being dragged over the window, so it is clear it can be dropped -->
+        <Border x:Name="DropOverlay" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" IsHitTestVisible="False" Background="#B0141414">
+            <Border Margin="28" CornerRadius="16" BorderThickness="2" BorderBrush="{DynamicResource AccentFillColorDefaultBrush}" Background="#22FFFFFF">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE70F;" FontSize="44" HorizontalAlignment="Center" Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
+                    <TextBlock x:Name="DropTitle" Text="Drop to open this edit" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,14,0,0"/>
+                    <TextBlock x:Name="DropName" Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
         </Border>
 
         <!-- Dialogs and notices sit above everything -->

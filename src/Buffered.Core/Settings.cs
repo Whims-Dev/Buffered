@@ -114,6 +114,10 @@ public sealed class Settings
     public string Hotkey { get; set; } = "F8";
     /// <summary>Optional keys: pause or resume recording (the buffer is kept), and stop or start it (stopping empties the buffer). Empty means none.</summary>
     public string PauseHotkey { get; set; } = "";
+    /// <summary>How the clip library is ordered: new (newest first), old, name, size, game.</summary>
+    public string ClipSort { get; set; } = "new";
+    /// <summary>False: clicking a clip opens a preview with an Edit button. True: it opens the editor straight away.</summary>
+    public bool ClipOpensEditor { get; set; }
     /// <summary>Extra hotkeys, each saving just the last few seconds or minutes. As many as the user wants.</summary>
     public List<ClipKey> ClipKeys { get; set; } = new();
     public string StopHotkey { get; set; } = "";
@@ -165,9 +169,6 @@ public sealed class Settings
         }
     }
 
-    public int PauseHotkeyCode => CodeFor(PauseHotkey);
-    public int StopHotkeyCode => CodeFor(StopHotkey);
-
     /// <summary>
     /// The Windows key code of the main key in a hotkey such as "F9", "P", "5" or "Ctrl+Alt+F9", or 0 for none.
     /// </summary>
@@ -195,8 +196,6 @@ public sealed class Settings
         return m;
     }
 
-    public int HotkeyCode => CodeFor(Hotkey) is var c and not 0 ? c : 'F';
-
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Buffered", "settings.json");
 
@@ -211,6 +210,13 @@ public sealed class Settings
         }
         catch { /* corrupt file: fall back to defaults */ }
         return new Settings();
+    }
+
+    /// <summary>Saves, and says whether it worked. For the places where a settings file that cannot be written should not interrupt anything.</summary>
+    public bool TrySave()
+    {
+        try { Save(); return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
     public void Save()

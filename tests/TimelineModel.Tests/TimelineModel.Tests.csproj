@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tries the editor's timeline logic (cut, trim, move, delete, undo) with made-up projects. Run it with "dotnet run" in this folder. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Buffered.UI\TimelineModel.cs" Link="TimelineModel.cs" />
+  </ItemGroup>
+
+</Project>

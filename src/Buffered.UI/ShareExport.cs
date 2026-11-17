@@ -96,7 +96,7 @@ internal static class ShareExport
             var psi = new ProcessStartInfo(Tools.Ffmpeg) { CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
             foreach (var x in a) psi.ArgumentList.Add(x);
             using var p = Process.Start(psi)!;
-            try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+            ProcessPriority.TrySet(p, ProcessPriorityClass.BelowNormal);
             var err = new StringBuilder();
             p.ErrorDataReceived += (_, e) => { if (e.Data is not null) err.AppendLine(e.Data); };
             p.OutputDataReceived += (_, e) =>

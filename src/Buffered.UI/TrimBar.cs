@@ -22,6 +22,10 @@ public sealed class TrimBar : FrameworkElement
     public event Action<bool>? DragEnded;
 
     public double Duration { get => _duration; set { bool fresh = _duration <= 0 && value > 0; _duration = Math.Max(0, value); if (fresh) FadeIn(ContentOpacityProperty); InvalidateVisual(); } }
+    private bool _trimVisible = true;
+    /// <summary>False: no trim frame or handles are shown (a plain seek bar, as in the preview).</summary>
+    public bool TrimVisible { get => _trimVisible; set { _trimVisible = value; InvalidateVisual(); } }
+
     public double Position { get => _position; set { if (_drag != Drag.Seek) { _position = value; InvalidateVisual(); } } }
     public double Start { get => _start; set { _start = value; InvalidateVisual(); } }
     public double End { get => _end; set { _end = value; InvalidateVisual(); } }
@@ -143,6 +147,7 @@ public sealed class TrimBar : FrameworkElement
         var railClip = railShape;
 
         // What will be cut away is dimmed.
+        if (_trimVisible) {
         dc.PushClip(railClip);
         var dim = new SolidColorBrush(Color.FromArgb(120, 0, 0, 0));
         dc.DrawRectangle(dim, null, new Rect(rail.Left, rail.Top, Math.Max(0, xs - rail.Left), rail.Height));
@@ -162,6 +167,7 @@ public sealed class TrimBar : FrameworkElement
         var grip = onAccent.CloneCurrentValue(); grip.Opacity = 0.55;
         foreach (double gx in new[] { xs - CapWidth / 2, xe + CapWidth / 2 })
             dc.DrawRoundedRectangle(grip, null, new Rect(gx - 1, cy - 6, 2, 12), 1, 1);
+        }
 
         // The playhead: a thin line with a round cap.
         double xp = X(_position);
@@ -294,7 +300,7 @@ public sealed class TrimBar : FrameworkElement
         if (_duration <= 0) return;
         double x = e.GetPosition(this).X;
         double ds = Math.Abs(x - (X(_start) - CapWidth / 2)), de = Math.Abs(x - (X(_end) + CapWidth / 2));
-        _drag = ds <= Grab && ds <= de ? Drag.Start : de <= Grab ? Drag.End : Drag.Seek;
+        _drag = !_trimVisible ? Drag.Seek : ds <= Grab && ds <= de ? Drag.Start : de <= Grab ? Drag.End : Drag.Seek;
         CaptureMouse();
         DragStarted?.Invoke(_drag == Drag.Seek);
         Apply(x);
@@ -306,7 +312,7 @@ public sealed class TrimBar : FrameworkElement
         double x = e.GetPosition(this).X;
         if (_drag == Drag.None)
         {
-            bool nearHandle = _duration > 0 && (Math.Abs(x - (X(_start) - CapWidth / 2)) <= Grab || Math.Abs(x - (X(_end) + CapWidth / 2)) <= Grab);
+            bool nearHandle = _trimVisible && _duration > 0 && (Math.Abs(x - (X(_start) - CapWidth / 2)) <= Grab || Math.Abs(x - (X(_end) + CapWidth / 2)) <= Grab);
             Cursor = nearHandle ? Cursors.SizeWE : Cursors.Hand;
             return;
         }

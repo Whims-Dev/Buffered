@@ -22,7 +22,7 @@ internal static class Trimmer
     /// If a companion file is given and a volume is changed, the audio is mixed again from it; otherwise the audio is copied untouched.
     /// </summary>
     public static async Task<(bool Ok, string Error)> RunAsync(string input, double start, double end, bool fast, string output,
-        string? stems = null, AudioEdit? edit = null)
+        string? stems = null, AudioEdit? edit = null, double stemsOffset = 0)
     {
         bool hasStems = stems is not null && File.Exists(stems);
         bool remix = hasStems && edit is not null;
@@ -39,7 +39,7 @@ internal static class Trimmer
             var a = new List<string> { "-hide_banner", "-loglevel", "error", "-y" };
             if (fastCut) a.Add("-noaccurate_seek");
             a.AddRange(new[] { "-ss", F(start), "-i", input });
-            if (hasStems) a.AddRange(new[] { "-ss", F(start), "-i", stems! });
+            if (hasStems) a.AddRange(new[] { "-ss", F(start + Math.Max(0, stemsOffset)), "-i", stems! });   // an older companion file can start earlier than its clip
 
             if (remix)
             {

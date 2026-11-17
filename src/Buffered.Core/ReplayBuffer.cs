@@ -182,7 +182,7 @@ internal sealed class ReplayBuffer
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Could not start ffmpeg.");
         // A save should never compete with a game for the CPU; it only has to finish in a few seconds.
-        try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+        ProcessPriority.TrySet(proc, ProcessPriorityClass.BelowNormal);
         string err = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
         try { File.Delete(raw); } catch { }

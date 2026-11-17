@@ -14,3 +14,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet build Buffered.slnx -c Release
+      - name: Playhead tests
+        run: dotnet run --project tests/PlayheadModel.Tests -c Release
+      - name: Timeline tests
+        run: dotnet run --project tests/TimelineModel.Tests -c Release

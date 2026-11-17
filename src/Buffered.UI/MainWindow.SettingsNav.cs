@@ -89,6 +89,7 @@ public partial class MainWindow
         ("Sound when a clip is saved", "sav", "beep chime audio cue"),
         ("Discord webhooks", "sha", "discord webhook share send post channel server link embed color order"),
         ("Timeline detail", "edi", "editor timeline waveform filmstrip frames pictures sound audio trim gear"),
+        ("Open the editor straight away", "edi", "click clip preview editor open straight away edit"),
         ("Arrow key seek", "edi", "arrow keys seek skip jump seconds shift left right editor keyboard"),
         ("Moving the playhead while playing", "edi", "scrub scrubbing drag playhead pause resume stay paused keep playing live editor seek"),
         ("Start with Windows", "sys", "startup boot login autostart"),

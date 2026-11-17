@@ -16,7 +16,7 @@ internal static class AppCaptureTest
         using var o = new StreamWriter(reportFile) { AutoFlush = true };
         try
         {
-            try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+            ProcessPriority.TrySet(Process.GetCurrentProcess(), ProcessPriorityClass.BelowNormal);
 
             var procs = Process.GetProcessesByName(name);
             if (procs.Length == 0) { o.WriteLine($"No running program called '{name}'."); return 2; }

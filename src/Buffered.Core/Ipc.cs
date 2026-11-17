@@ -10,6 +10,9 @@ public sealed record RecorderStatus(
     string Audio = "", double GameLevel = 0, double MicLevel = 0, string Source = "Monitor",
     bool Starting = false, bool Stopped = false);
 
+/// <summary>The live level (0 to 1) of each sound being recorded, by track name, for the meters next to the volume sliders.</summary>
+public sealed record RecorderLevels(Dictionary<string, float> Tracks);
+
 public static class Ipc
 {
     public const string PipeName = "Buffered.Recorder.v1";
@@ -28,6 +31,14 @@ public static class Ipc
             await writer.WriteLineAsync(command.AsMemory(), cts.Token);
             return await reader.ReadLineAsync(cts.Token);
         }
+        catch { return null; }
+    }
+
+    /// <summary>The live level of each track, quick to ask for (meant to be asked many times a second while a meter is on screen).</summary>
+    public static async Task<RecorderLevels?> GetLevelsAsync()
+    {
+        var line = await SendAsync("levels", 400);
+        try { return line is null ? null : JsonSerializer.Deserialize<RecorderLevels>(line, Json); }
         catch { return null; }
     }
 

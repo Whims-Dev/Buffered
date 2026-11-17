@@ -116,70 +116,6 @@ public static class AudioDevices
     }
 }
 
-/// <summary>WASAPI capture that asks Windows to convert to a fixed format, optionally capturing what a device is playing.</summary>
-internal sealed class FixedFormatCapture : WasapiCapture
-{
-    private readonly bool _loopback;
-
-    public FixedFormatCapture(MMDevice device, bool loopback, WaveFormat format) : base(device, true, 30)
-    {
-        _loopback = loopback;
-        WaveFormat = format;
-    }
-
-    protected override AudioClientStreamFlags GetAudioClientStreamFlags() =>
-        AudioClientStreamFlags.AutoConvertPcm | AudioClientStreamFlags.SrcDefaultQuality |
-        (_loopback ? AudioClientStreamFlags.Loopback : AudioClientStreamFlags.None);
-}
-
-/// <summary>
-/// Captures the sound of one program (and its helper processes), or of everything except that program, using Windows' per-program
-/// loopback (Windows 10 version 2004 and later). Presents itself like the other capture classes so a track can use it.
-/// </summary>
-internal sealed class ProcessLoopbackCapture : IWaveIn
-{
-    private readonly uint _pid; private readonly ProcessLoopbackMode _mode;
-    private WasapiRecorder? _recorder; private CancellationTokenSource? _cts; private Task? _pump;
-
-    public ProcessLoopbackCapture(uint pid, ProcessLoopbackMode mode, WaveFormat format) { _pid = pid; _mode = mode; WaveFormat = format; }
-
-    public WaveFormat WaveFormat { get; set; }
-    public event EventHandler<WaveInEventArgs>? DataAvailable;
-    public event EventHandler<StoppedEventArgs>? RecordingStopped;
-
-    public void StartRecording()
-    {
-        _recorder = new WasapiRecorderBuilder().WithProcessLoopback(_pid, _mode).WithFormat(WaveFormat).BuildAsync().GetAwaiter().GetResult();
-        _cts = new CancellationTokenSource();
-        var recorder = _recorder; var token = _cts.Token;
-        _pump = Task.Run(async () =>
-        {
-            Exception? failure = null;
-            try
-            {
-                await foreach (var buf in recorder.CaptureAsync(token))
-                {
-                    var data = buf.Data.ToArray();
-                    DataAvailable?.Invoke(this, new WaveInEventArgs(data, data.Length));
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex) { failure = ex; }
-            RecordingStopped?.Invoke(this, new StoppedEventArgs(failure));
-        });
-    }
-
-    public void StopRecording() { try { _cts?.Cancel(); } catch { } }
-
-    public void Dispose()
-    {
-        StopRecording();
-        try { _pump?.Wait(1500); } catch { }
-        try { _recorder?.Dispose(); } catch { }
-        _cts?.Dispose();
-    }
-}
-
 /// <summary>
 /// Records one audio source as 48 kHz 16-bit PCM into a RAM ring, time-stamped on the shared timeline.
 /// Loopback capture delivers nothing while the device is silent, so gaps are filled with silence to keep timing exact.
@@ -200,6 +136,8 @@ internal sealed class AudioTrack : IDisposable
     private readonly int _storedBytes;   // bytes held per frame: the same as _frameBytes, or half of it when compressed
     private float _peak;
     private long _peakAt;
+    private float _blockPeak;   // the loudest sample of the latest block of sound, for the live meters
+    private long _blockAt;
     private readonly long _maxFrames;
 
     private readonly object _lock = new();
@@ -223,6 +161,9 @@ internal sealed class AudioTrack : IDisposable
     /// <summary>The recent peak level, 0 to 1, or 0 if nothing has arrived for a moment.</summary>
     public float Level => Environment.TickCount64 - _peakAt > 1500 ? 0 : _peak;
 
+    /// <summary>The loudest sample of the latest block of sound (a few hundredths of a second), 0 to 1, or 0 if nothing has arrived for a moment. For live meters.</summary>
+    public float MeterLevel => Environment.TickCount64 - _blockAt > 250 ? 0 : _blockPeak;
+
     public AudioTrack(string name, MMDevice device, bool loopback, int channels, Timeline tl, int windowSeconds, bool compensateVolume = false, bool compress = false)
     {
         Name = name; _tl = tl; _channels = channels; _loopback = loopback; _compensate = compensateVolume;
@@ -233,7 +174,7 @@ internal sealed class AudioTrack : IDisposable
         _maxFrames = (long)(windowSeconds + 15) * Rate; // a little more than the video window so cuts always have audio
         DeviceId = device.ID;
         DeviceName = device.FriendlyName;
-        _cap = new FixedFormatCapture(device, loopback, new WaveFormat(Rate, 16, channels));
+        _cap = new DeviceCapture(device, loopback, new WaveFormat(Rate, 16, channels));
         _cap.DataAvailable += OnData;
         _cap.RecordingStopped += OnStopped;
     }
@@ -253,7 +194,7 @@ internal sealed class AudioTrack : IDisposable
         _maxFrames = (long)(windowSeconds + 15) * Rate;
         DeviceId = $"process:{processId}:{mode}";
         DeviceName = name;
-        _cap = new ProcessLoopbackCapture(processId, mode, new WaveFormat(Rate, 16, 2));
+        _cap = ProgramCapture.Create(processId, mode, new WaveFormat(Rate, 16, 2));
         _cap.DataAvailable += OnData;
         _cap.RecordingStopped += OnStopped;
     }
@@ -267,7 +208,7 @@ internal sealed class AudioTrack : IDisposable
     public void Rebind(MMDevice device)
     {
         if (IsProcess) { device.Dispose(); return; }
-        var next = new FixedFormatCapture(device, _loopback, new WaveFormat(Rate, 16, _channels));
+        var next = new DeviceCapture(device, _loopback, new WaveFormat(Rate, 16, _channels));
         next.DataAvailable += OnData;
         next.RecordingStopped += OnStopped;
         next.StartRecording();
@@ -329,6 +270,7 @@ internal sealed class AudioTrack : IDisposable
         foreach (short v in samples) { int a = v < 0 ? -v : v; if (a > max) max = a; }
         float p = max / 32768f;
         long now = Environment.TickCount64;
+        _blockPeak = p; _blockAt = now;
         if (p >= _peak || now - _peakAt > 600) { _peak = p; _peakAt = now; }
     }
 

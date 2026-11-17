@@ -66,7 +66,7 @@ public partial class MainWindow
         bool was = _loading; _loading = true;
         ZoomBox.SelectedItem = ZoomChoices.FirstOrDefault(c => c.Value == percent);
         _loading = was;
-        try { _settings.Save(); } catch { }
+        _settings.TrySave();
 
         if (!showPill) return;
         ZoomText.Text = percent + "%";

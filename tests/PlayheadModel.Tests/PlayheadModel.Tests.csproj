@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A small program that tries the playhead logic with made-up inputs. Run it with "dotnet run" in this folder.
+       It prints pass or FAIL for each case and exits with the number of failures. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Buffered.UI\PlayheadModel.cs" Link="PlayheadModel.cs" />
+  </ItemGroup>
+
+</Project>

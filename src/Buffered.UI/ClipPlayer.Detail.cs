@@ -47,7 +47,7 @@ public partial class ClipPlayer
             var (peaks, rawMax) = await Media.GetPeaksAsync(clip.Path);
             if (_clip == clip)
             {
-                Bar.Peaks = peaks;
+                Hitch.Measure("show the waveform", () => Bar.Peaks = peaks);
                 // A clip whose sound reaches the very top of what the format can hold is probably distorted; say so, since it is easy to miss.
                 ClipWarn.Visibility = peaks is not null && rawMax >= 0.99f ? Visibility.Visible : Visibility.Collapsed;
             }
@@ -56,7 +56,7 @@ public partial class ClipPlayer
         {
             _stripTried = true;
             var strip = await Media.GetFilmstripAsync(clip.Path, duration, Bar.StripTiles);
-            if (_clip == clip) Bar.Strip = strip;
+            if (_clip == clip) Hitch.Measure("show the filmstrip", () => Bar.Strip = strip);
         }
     }
 
@@ -88,7 +88,7 @@ public partial class ClipPlayer
         {
             if (_appSettings is null || _appSettings.ScrubMode == id) return;
             _appSettings.ScrubMode = id;
-            try { _appSettings.Save(); } catch { }
+            _appSettings.TrySave();
             TimelineDetailChanged?.Invoke();
         });
     }
@@ -135,7 +135,7 @@ public partial class ClipPlayer
     {
         if (_appSettings is null || _appSettings.TimelineDetail == id) return;
         _appSettings.TimelineDetail = id;
-        try { _appSettings.Save(); } catch { }
+        _appSettings.TrySave();
         EnsureDetail();
         TimelineDetailChanged?.Invoke();
     }

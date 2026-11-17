@@ -6,7 +6,7 @@ A lightweight instant-replay clipper for Windows. It keeps the last few minutes 
 - **Clip manager.** A small window to browse clips, play them, and trim them. It can stay open without costing much.
 - **Editor.** A timeline that shows the part you keep in a gold frame, with the clip's sound, little pictures from it, or both, plus the times. Trim with the handles or by typing times, step a frame at a time with `,` and `.`, and jump with the arrow keys (the distances are settings). Moving the playhead stays smooth, because Buffered quietly makes a copy of the clip with frequent keyframes in the background while you work.
 - **Interface zoom.** Hold Ctrl and turn the mouse wheel, or press Ctrl and plus or minus, to make everything bigger or smaller (Ctrl 0 goes back to 100%).
-- **Audio.** Game audio and microphone are recorded together, with a volume and a mute button for each track in the editor. One app, such as Discord, can be recorded on a track of its own, so you can turn it up, down or off in a clip later.
+- **Audio.** Game audio and microphone are recorded together, with a volume and a mute button for each track in the editor. Volumes change as you listen, with no waiting, and every volume slider (in the editor and in Settings) shows a live level, like Windows' own mixer. One app, such as Discord, can be recorded on a track of its own, so you can turn it up, down or off in a clip later.
 - **Game windows.** Add a game and Buffered records just its window instead of the whole monitor, even if you minimize it (it is restored behind your other windows). Each game can have its own quality, buffer length, volumes and clips folder.
 - **Sharing.** Make a smaller copy that fits a chat app (10, 20, 25 or 50 MB), copy the original, or post a clip straight to a Discord channel through a webhook, with a title, details and the video attached. Keep as many named, colored webhooks as you like and put them in your own order. Everything happens when you click; nothing is uploaded on its own.
 - **Folders and favorites.** Folders (each with its own color), favorites that are protected from delete, names and notes, drag-select, copy and drag a clip out.
@@ -57,6 +57,13 @@ powershell -File scripts\publish.ps1 -FfmpegDir C:\path\to\ffmpeg\bin
 Leave out `-FfmpegDir` to ship without ffmpeg. If you bundle it, check that ffmpeg build's license first.
 
 Pushing a tag such as `v0.1.0` runs the release workflow, which downloads a checksum-verified ffmpeg build, builds the zip and attaches it to a GitHub release.
+
+## Code layout and tests
+
+- `src/Buffered.Core` is the recorder itself (capture, encoder, RAM buffer, audio, settings, the pipe between the two programs).
+- `src/Buffered.Recorder` is the tray program (`BufferedRecorder.exe`): hotkeys, the tray menu, and the pipe server.
+- `src/Buffered.UI` is the clip manager (`BufferedUI.exe`). The editor (`ClipPlayer`) is split by job into `ClipPlayer.*.cs`; where the playhead is drawn is decided by `PlayheadModel.cs`, which has tests.
+- `tests/PlayheadModel.Tests` is a small program that tries the playhead logic with made-up inputs. Run `dotnet run -c Release` inside that folder; every line should say `pass`. The build workflow runs it too.
 
 ## How it works
 

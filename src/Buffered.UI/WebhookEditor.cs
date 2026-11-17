@@ -74,7 +74,7 @@ public sealed class WebhookEditor : UserControl
 
     private void Save()
     {
-        try { _s?.Save(); } catch { /* the list still works for this session */ }
+        _s?.TrySave();
         NotifyChanged();
     }
 

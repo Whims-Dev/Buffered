@@ -272,7 +272,7 @@ public partial class ClipPlayer
             string input = clipPath;
             if (ShareAudioEdited && _stems is not null)   // volumes and muted tracks changed in the editor are part of the copy
             {
-                preview = await Media.MakeBalancedPreviewAsync(clipPath, _stems, TrackDbs, TrackInMix);
+                preview = await Media.MakeBalancedPreviewAsync(clipPath, _stems, TrackDbs, TrackInMix, _stemsOffset);
                 if (preview is not null) input = preview;
             }
             var progress = new Progress<double>(v => ShareBar.Value = v);
@@ -333,7 +333,7 @@ public partial class ClipPlayer
                 string input = clip.Path;
                 if (ShareAudioEdited && _stems is not null)
                 {
-                    preview = await Media.MakeBalancedPreviewAsync(clip.Path, _stems, TrackDbs, TrackInMix);
+                    preview = await Media.MakeBalancedPreviewAsync(clip.Path, _stems, TrackDbs, TrackInMix, _stemsOffset);
                     if (preview is not null) input = preview;
                 }
                 // The smaller copy is only made for sending: it is removed afterwards, not left next to the original.
@@ -359,7 +359,7 @@ public partial class ClipPlayer
                 if (_appSettings is not null && _appSettings.LastWebhook != hook.Id)
                 {
                     _appSettings.LastWebhook = hook.Id;
-                    try { _appSettings.Save(); } catch { }
+                    _appSettings.TrySave();
                 }
                 _linkMessage = r.MessageUrl; _linkApp = r.AppUrl;
                 ShowSendResult($"Sent to {hook.Label}.", true);

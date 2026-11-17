@@ -11,7 +11,9 @@ public static class Tools
 
     private static string Find(string name)
     {
-        foreach (var dir in new[] { AppContext.BaseDirectory, Path.Combine(AppContext.BaseDirectory, "tools") })
+        // BUFFERED_TOOLS_DIR points at another folder with ffmpeg (for trying a fuller build while developing)
+        var extra = Environment.GetEnvironmentVariable("BUFFERED_TOOLS_DIR");
+        foreach (var dir in new[] { extra ?? "", AppContext.BaseDirectory, Path.Combine(AppContext.BaseDirectory, "tools") }.Where(d => d.Length > 0))
         {
             var p = Path.Combine(dir, name + ".exe");
             if (File.Exists(p)) return p;

@@ -37,6 +37,14 @@ public sealed class RecorderEngine : IDisposable
     private Thread? _follow;
     private volatile bool _following;
 
+    /// <summary>The live level (0 to 1) of every track by name: Game, Mic, and each program recorded on its own.</summary>
+    public Dictionary<string, float> MeterLevels()
+    {
+        var d = new Dictionary<string, float>();
+        lock (_audioLock) foreach (var t in _tracks) d[t.Name] = t.MeterLevel;
+        return d;
+    }
+
     private float LevelOf(string name) { lock (_audioLock) return _tracks.FirstOrDefault(t => t.Name == name)?.Level ?? 0; }
     public long PacketsOut => _enc?.PacketsOut ?? 0;
     public long DroppedFrames => _enc?.Dropped ?? 0;

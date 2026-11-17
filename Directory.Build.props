@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- Settings every project in this repository shares. -->
+  <PropertyGroup>
+    <!-- Warnings about possible missing values, and about using something marked obsolete, stop the build instead of piling up. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS0618</WarningsAsErrors>
+    <!-- Dependencies are not checked for known problems on every build (that needs the network); a release can do it. -->
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+
+</Project>

@@ -23,8 +23,27 @@ public partial class MainWindow
 
     private void Card_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.DataContext is ClipItem c) { _cards[c] = fe; QueueVisibleCheck(); }
+        if (sender is FrameworkElement fe && fe.DataContext is ClipItem c)
+        {
+            _cards[c] = fe; QueueVisibleCheck();
+            fe.MouseEnter -= Card_HoverStart; fe.MouseLeave -= Card_HoverEnd;
+            fe.MouseEnter += Card_HoverStart; fe.MouseLeave += Card_HoverEnd;
+        }
     }
+
+    // ---- resting the mouse on a clip starts its smooth-scrubbing copy, so it is ready by the time the clip is opened ----
+    private System.Threading.CancellationTokenSource? _hoverPrep;
+
+    private async void Card_HoverStart(object sender, MouseEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ClipItem c }) return;
+        _hoverPrep?.Cancel();
+        var cts = _hoverPrep = new System.Threading.CancellationTokenSource();
+        try { await Task.Delay(450, cts.Token); } catch (TaskCanceledException) { return; }   // only when the mouse rests there, not when it passes over
+        ScrubCache.PrepareInBackground(new[] { c.Path });
+    }
+
+    private void Card_HoverEnd(object sender, MouseEventArgs e) => _hoverPrep?.Cancel();
 
     private void Card_Unloaded(object sender, RoutedEventArgs e)
     {
@@ -538,6 +557,7 @@ public partial class MainWindow
         if (items.Count == 1)
         {
             Add("Open", () => { if (File.Exists(c.Path)) OpenPlayer(c); });
+            Add("Edit", () => { if (File.Exists(c.Path)) OpenPlayer(c, null, editor: true); });
             Add("Rename…", async () => await RenameClipAsync(c));
             Add(string.IsNullOrEmpty(c.Note) ? "Add note…" : "Edit note…", async () => await EditNoteAsync(c));
             menu.Items.Add(new Separator());
