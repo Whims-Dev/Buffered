@@ -48,6 +48,7 @@ jobs:
       - name: Build
         working-directory: ffmpeg-src
         run: |
+          # The hevc parser is only in the list below because FFmpeg 7.1 links its H.264 code to a film-grain helper that is built together with it.
           ./configure \
             --prefix=/tmp/ffout --enable-shared --disable-static \
             --enable-gpl --disable-autodetect --disable-doc --disable-debug --disable-ffplay \
@@ -55,7 +56,7 @@ jobs:
             --enable-libx264 --enable-ffnvcodec --enable-nvenc \
             --enable-decoder=h264,aac,pcm_s16le \
             --enable-encoder=libx264,h264_nvenc,aac,mjpeg,pcm_s16le \
-            --enable-parser=h264,aac \
+            --enable-parser=h264,aac,hevc \
             --enable-demuxer=mov,matroska,h264,s16le \
             --enable-muxer=mp4,matroska,mjpeg,image2,s16le,h264,null \
             --enable-protocol=file,pipe \
