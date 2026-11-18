@@ -279,7 +279,6 @@ public sealed class TimelineView : FrameworkElement
         }
 
         // snap guide while dragging
-        if (_snapLine is { } sl) dc.DrawLine(new Pen(Brushes.Gold, 1), new Point(X(sl), RulerHeight), new Point(X(sl), h));
 
         // track headers on top of whatever scrolled under them
         dc.DrawRectangle(Res("SolidBackgroundFillColorBaseBrush", Brushes.Black), null, new Rect(0, 0, HeaderWidth, h));
@@ -318,6 +317,8 @@ public sealed class TimelineView : FrameworkElement
             dc.DrawLine(new Pen(red, 2), new Point(px, 0), new Point(px, h));
             dc.DrawGeometry(red, null, Geometry.Parse($"M {px - 6:0.#},0 L {px + 6:0.#},0 L {px:0.#},9 Z"));
         }
+        // the yellow line where something snapped; drawn last so it shows even on top of the playhead
+        if (_snapLine is { } sl) dc.DrawLine(new Pen(Brushes.Gold, Math.Abs(sl - _playhead) < 1e-6 ? 2.5 : 1), new Point(X(sl), RulerHeight), new Point(X(sl), h));
     }
 
     /// <summary>Small pictures along each video source, filled in by the editor: the time of each and where its files are.</summary>
