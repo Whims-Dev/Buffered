@@ -429,7 +429,7 @@ public partial class AdvancedEditor
             {
                 if (box.Child is not Image img) box.Child = img = new Image { Stretch = Stretch.Uniform };
                 // an animated GIF shows the picture for this moment and starts over when it has run through
-                img.Source = GifAnimation.IsGif(it.Source) && GifFor(it.Source) is { } gif ? gif.Frames[gif.IndexAt(t - it.Start)] : PictureFor(it.Source);
+                img.Source = GifAnimation.IsGif(it.Source) && GifFor(it.Source) is { } gif ? gif.Frames[gif.IndexAt((t - it.Start) * it.Props.GifSpeed)] : PictureFor(it.Source);
                 img.Width = W * 0.4 * scale;
             }
             double into = t - it.Start, left = it.End - t, env = 1;

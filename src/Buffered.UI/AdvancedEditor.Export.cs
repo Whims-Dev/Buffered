@@ -162,7 +162,7 @@ public partial class AdvancedEditor
         int frames = (int)Math.Ceiling(it.Length * fps) + 1;
         for (int k = 0; k < frames; k++)
         {
-            int index = gif.IndexAt(k / (double)fps);
+            int index = gif.IndexAt(k / (double)fps * it.Props.GifSpeed);
             string file = Path.Combine(dir, $"{k + 1:00000}.png");
             if (written.TryGetValue(index, out var first)) File.Copy(first, file, overwrite: true);
             else

@@ -678,7 +678,9 @@ public partial class AdvancedEditor : UserControl
         bool picture = it.Kind != ItemKind.Audio, overlay = it.Kind is ItemKind.Text or ItemKind.Image, timed = it.Kind is ItemKind.Video or ItemKind.Audio;
         Vis(picture, OpacityRow, OpacitySlider);
         Vis(it.Kind == ItemKind.Audio, VolumeRow, VolumeSlider, BeatButton);
-        Vis(timed, SpeedRow, SpeedSlider, RampButton);
+        bool gif = it.Kind == ItemKind.Image && GifAnimation.IsGif(it.Source);
+        Vis(timed || gif, SpeedRow, SpeedSlider);
+        Vis(timed, RampButton);
         Vis(it.Kind == ItemKind.Text, WordsPanel);
         Vis(overlay || it.Kind == ItemKind.Video, PlacePanel);
         Vis(it.Kind is ItemKind.Video or ItemKind.Image, CropPanel);
@@ -693,7 +695,7 @@ public partial class AdvancedEditor : UserControl
             OpacitySlider.Value = it.Props.ValueAt(KeyProp.Opacity, at) * 100;
             VolumeSlider.Value = it.Props.ValueAt(KeyProp.Volume, at) * 100;
             FadeInSlider.Value = it.Props.FadeIn; FadeOutSlider.Value = it.Props.FadeOut;
-            SpeedSlider.Value = it.Props.Speed;
+            SpeedSlider.Value = gif ? it.Props.GifSpeed : it.Props.Speed;
             SizeSlider.Value = it.Props.ValueAt(KeyProp.TextSize, at) * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
             PosXSlider.Value = it.Props.ValueAt(KeyProp.PosX, at) * 100; PosYSlider.Value = it.Props.ValueAt(KeyProp.PosY, at) * 100;
             RotateSlider.Value = it.Props.ValueAt(KeyProp.Rotation, at);
@@ -748,7 +750,7 @@ public partial class AdvancedEditor : UserControl
                 sender == CropRSlider ? o with { CropR = Math.Min(CropRSlider.Value / 100, 0.95 - o.CropL) } :
                 sender == CropTSlider ? o with { CropT = Math.Min(CropTSlider.Value / 100, 0.95 - o.CropB) } :
                 sender == CropBSlider ? o with { CropB = Math.Min(CropBSlider.Value / 100, 0.95 - o.CropT) } :
-                o with { Speed = SpeedSlider.Value });
+                next.Find(id) is { Kind: ItemKind.Image } ? o with { GifSpeed = SpeedSlider.Value } : o with { Speed = SpeedSlider.Value });
             // a slower item gets longer: refuse it if that would run into its neighbour
             var item = next.Find(id)!;
             int track = next.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));

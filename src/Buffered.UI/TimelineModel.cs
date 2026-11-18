@@ -13,7 +13,7 @@ public enum TrackKind { Video, Audio, Text }
 /// </summary>
 public sealed record ItemProps(double Opacity = 1, double Volume = 1, double FadeIn = 0, double FadeOut = 0, double Speed = 1, string? Text = null,
     double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null, double Rotation = 0, double CropL = 0, double CropT = 0, double CropR = 0, double CropB = 0,
-    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null)
+    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null, double GifSpeed = 1)
 {
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
     public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, KeyProp.Rotation => Rotation, _ => Scale };
