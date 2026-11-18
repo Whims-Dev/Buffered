@@ -186,8 +186,9 @@ public sealed class TimelineView : FrameworkElement
 
                 // fades as small triangles
                 var fadeBrush = new SolidColorBrush(Color.FromArgb(110, 0, 0, 0));
-                if (it.Props.FadeIn > 0) FadeShape(dc, fadeBrush, X(it.Start), X(it.Start + it.Props.FadeIn), top + 3, lh - 6, true, r);
-                if (it.Props.FadeOut > 0) FadeShape(dc, fadeBrush, X(it.End - it.Props.FadeOut), X(it.End), top + 3, lh - 6, false, r);
+                var (fadeIn, fadeOut) = it.Fades;   // as they really play: never longer than the item
+                if (fadeIn > 0) FadeShape(dc, fadeBrush, X(it.Start), X(it.Start + fadeIn), top + 3, lh - 6, true, r);
+                if (fadeOut > 0) FadeShape(dc, fadeBrush, X(it.End - fadeOut), X(it.End), top + 3, lh - 6, false, r);
 
                 if (it.Kind == ItemKind.Audio && Waveforms.TryGetValue($"{it.Source}#{it.Stream}", out var wave)) DrawWave(dc, it, wave, r, top);
 
@@ -237,8 +238,8 @@ public sealed class TimelineView : FrameworkElement
                 {
                     double hr = 4.5 * F, hy = top + 3 + hr + 1;
                     var handle = new SolidColorBrush(Color.FromArgb(235, 255, 255, 255));
-                    dc.DrawEllipse(handle, new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), 1), new Point(Math.Max(x0 + hr + 2, X(it.Start + it.Props.FadeIn)), hy), hr, hr);
-                    dc.DrawEllipse(handle, new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), 1), new Point(Math.Min(x1 - hr - 2, X(it.End - it.Props.FadeOut)), hy), hr, hr);
+                    dc.DrawEllipse(handle, new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), 1), new Point(Math.Clamp(X(it.Start + it.Fades.In), x0 + hr + 2, Math.Max(x0 + hr + 2, x1 - hr - 2)), hy), hr, hr);
+                    dc.DrawEllipse(handle, new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), 1), new Point(Math.Clamp(X(it.End - it.Fades.Out), Math.Min(x0 + hr + 2, x1 - hr - 2), x1 - hr - 2), hy), hr, hr);
                 }
                 if (it.Id == _selected)   // trim handles
                 {
@@ -527,7 +528,7 @@ public sealed class TimelineView : FrameworkElement
         int lane = _project.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));
         if (lane < 0 || _project.Tracks[lane].Locked) return null;
         double hr = 4.5 * F, hy = LaneTop(lane) + 3 + hr + 1, grab = hr + 3;
-        double inX = Math.Max(X(it.Start) + hr + 2, X(it.Start + it.Props.FadeIn)), outX = Math.Min(X(it.End) - hr - 2, X(it.End - it.Props.FadeOut));
+        double inX = Math.Clamp(X(it.Start + it.Fades.In), X(it.Start) + hr + 2, Math.Max(X(it.Start) + hr + 2, X(it.End) - hr - 2)), outX = Math.Clamp(X(it.End - it.Fades.Out), Math.Min(X(it.Start) + hr + 2, X(it.End) - hr - 2), X(it.End) - hr - 2);
         if (Math.Abs(p.Y - hy) > grab) return null;
         if (Math.Abs(p.X - inX) <= grab) return Drag.FadeIn;
         if (Math.Abs(p.X - outX) <= grab) return Drag.FadeOut;
@@ -699,7 +700,7 @@ public sealed class TimelineView : FrameworkElement
         {
             double t = T(p.X);
             double len = Math.Clamp(_drag == Drag.FadeIn ? t - item.Start : item.End - t, 0, item.Length);
-            next = b.SetProps(_dragId, o => _drag == Drag.FadeIn ? o with { FadeIn = len } : o with { FadeOut = len });
+            next = b.SetProps(_dragId, o => _drag == Drag.FadeIn ? o with { FadeIn = len, FadeOut = Math.Min(o.FadeOut, item.Length - len) } : o with { FadeOut = len, FadeIn = Math.Min(o.FadeIn, item.Length - len) });   // the other fade gives way, so the two never overlap
         }
         else if (_drag == Drag.Move)
         {

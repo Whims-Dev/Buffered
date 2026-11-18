@@ -695,7 +695,7 @@ public partial class AdvancedEditor : UserControl
             double at = _t - it.Start;
             OpacitySlider.Value = it.Props.ValueAt(KeyProp.Opacity, at) * 100;
             VolumeSlider.Value = it.Props.ValueAt(KeyProp.Volume, at) * 100;
-            FadeInSlider.Value = it.Props.FadeIn; FadeOutSlider.Value = it.Props.FadeOut;
+            FadeInSlider.Value = it.Fades.In; FadeOutSlider.Value = it.Fades.Out;
             SpeedSlider.Value = gif ? it.Props.GifSpeed : it.Props.Speed;
             SizeSlider.Value = it.Props.ValueAt(KeyProp.TextSize, at) * 100; ScaleSlider.Value = it.Props.ValueAt(KeyProp.Scale, at) * 100;
             PosXSlider.Value = it.Props.ValueAt(KeyProp.PosX, at) * 100; PosYSlider.Value = it.Props.ValueAt(KeyProp.PosY, at) * 100;
@@ -740,8 +740,8 @@ public partial class AdvancedEditor : UserControl
             next = next.SetProps(id, o =>
                 sender == OpacitySlider ? o with { Opacity = OpacitySlider.Value / 100 } :
                 sender == VolumeSlider ? o with { Volume = VolumeSlider.Value / 100 } :
-                sender == FadeInSlider ? o with { FadeIn = FadeInSlider.Value } :
-                sender == FadeOutSlider ? o with { FadeOut = FadeOutSlider.Value } :
+                sender == FadeInSlider ? o with { FadeIn = FadeInSlider.Value, FadeOut = Math.Min(o.FadeOut, Math.Max(0, (next.Find(id)?.Length ?? 0) - FadeInSlider.Value)) } :
+                sender == FadeOutSlider ? o with { FadeOut = FadeOutSlider.Value, FadeIn = Math.Min(o.FadeIn, Math.Max(0, (next.Find(id)?.Length ?? 0) - FadeOutSlider.Value)) } :
                 sender == SizeSlider ? o with { TextSize = SizeSlider.Value / 100 } :
                 sender == ScaleSlider ? o with { Scale = ScaleSlider.Value / 100 } :
                 sender == PosXSlider ? o with { PosX = PosXSlider.Value / 100 } :
