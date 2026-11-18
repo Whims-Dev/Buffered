@@ -638,7 +638,7 @@ public sealed class TimelineView : FrameworkElement
 
         var item = _project.Find(id)!;
         _dragBase = _project; _dragId = id; _dragChanged = false; _dragLength = item.Length;
-        _dragIds = _sel.Contains(id) && part == 0 ? _sel.ToList() : new List<Guid> { id };
+        _dragIds = _sel.Contains(id) ? _sel.ToList() : new List<Guid> { id };   // a move or a trim goes for everything selected
         _dragGrabOffset = T(p.X) - item.Start;
         _drag = part < 0 ? Drag.TrimLeft : part > 0 ? Drag.TrimRight : Drag.Move;
         CaptureMouse();
@@ -719,11 +719,15 @@ public sealed class TimelineView : FrameworkElement
         else
         {
             double t = T(p.X);
-            if (b.SnapPoint(t, within, _dragId) is { } s) { t = s; _snapLine = s; }
+            var moving = _dragIds.SelectMany(i => b.GroupOf(i)).Distinct().ToList();   // everything selected, with the sound linked to each picture
+            if (b.SnapPoint(t, within, moving) is { } s) { t = s; _snapLine = s; }
             else if (Math.Abs(_playhead - t) <= within) { t = _playhead; _snapLine = _playhead; }
-            next = b.Trim(_dragId, _drag == Drag.TrimLeft, t, SourceLength(item));
-            foreach (var other in b.GroupOf(_dragId).Where(g => g != _dragId))   // the sound linked to a picture is trimmed to the same moment
-                if (next.Find(other) is { } o) next = next.Trim(other, _drag == Drag.TrimLeft, t, SourceLength(o));
+            bool left = _drag == Drag.TrimLeft;
+            double delta = t - (left ? item.Start : item.End);      // each edge moves by as much as the one being dragged
+            next = b;
+            foreach (var other in moving)
+                if (b.Find(other) is { } o && next.Find(other) is not null)
+                    next = next.Trim(other, left, (left ? o.Start : o.End) + delta, SourceLength(o));
         }
         if (!ReferenceEquals(next, _project)) { _project = next; _dragChanged = true; Changing?.Invoke(next); }
         InvalidateVisual();

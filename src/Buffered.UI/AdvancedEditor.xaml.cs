@@ -481,6 +481,7 @@ public partial class AdvancedEditor : UserControl
         _selected = Tl.Selected;
         UndoButton.IsEnabled = _h.CanUndo; RedoButton.IsEnabled = _h.CanRedo;
         UnlinkButton.IsEnabled = _selected is { } id && p.Find(id)?.LinkId is not null;
+        LinkButton.IsEnabled = CanLink(p, Tl.Selection.ToList());
         _t = Math.Min(_t, p.Duration);
         PushLanes();
         ShowProps(); ShowClock(); UpdateScroll();
@@ -516,6 +517,22 @@ public partial class AdvancedEditor : UserControl
         AfterEdit();
     }
 
+    /// <summary>Two or more items that are not already all in the same group.</summary>
+    private static bool CanLink(Project p, IReadOnlyCollection<Guid> ids)
+    {
+        if (ids.Count < 2) return false;
+        var links = ids.Select(i => p.Find(i)?.LinkId).ToList();
+        return !(links[0] is not null && links.All(l => l == links[0]));
+    }
+
+    private void Link_Click(object sender, RoutedEventArgs e)
+    {
+        var chosen = Tl.Selection.ToList();
+        if (!CanLink(_h.Current, chosen)) { StatusText.Text = "Select two or more items (Ctrl+click or drag a box around them) to link them"; return; }
+        _h.Apply(_h.Current.Link(chosen)); AfterEdit();
+        StatusText.Text = $"Linked {chosen.Count} items: they now move, trim and cut together";
+    }
+
     private void Unlink_Click(object sender, RoutedEventArgs e)
     {
         var p = _h.Current;
@@ -530,11 +547,11 @@ public partial class AdvancedEditor : UserControl
         var p = _h.Current;
         var chosen = Tl.Selection.ToList();
         bool anyLinked = chosen.Any(i => p.Find(i)?.LinkId is not null);
-        bool canLink = chosen.Count >= 2 && chosen.Select(i => p.Find(i)?.LinkId).Distinct().Count() != 1;
+        bool canLink = CanLink(p, chosen);
         var menu = new ContextMenu();
         void Add(string text, Action act, bool enabled = true) { var m = new MenuItem { Header = text, IsEnabled = enabled }; m.Click += (_, _) => act(); menu.Items.Add(m); }
         Add("Unlink: separate the picture and its sound", () => Unlink_Click(this, new RoutedEventArgs()), anyLinked);
-        Add("Link the selected items together", () => { _h.Apply(_h.Current.Link(chosen)); AfterEdit(); }, canLink);
+        Add("Link the selected items together (Ctrl+L)", () => Link_Click(this, new RoutedEventArgs()), canLink);
         var video = chosen.Count == 1 && p.Find(chosen[0]) is { Kind: ItemKind.Video } v && _t >= v.Start && _t < v.End ? v : null;
         Add("Freeze frame: hold this picture for 2 seconds", () => _ = FreezeFrameAsync(video!), video is not null);
         menu.Items.Add(new Separator());
@@ -654,6 +671,7 @@ public partial class AdvancedEditor : UserControl
     {
         var it = _selected is { } id ? _h.Current.Find(id) : null;
         UnlinkButton.IsEnabled = it?.LinkId is not null;
+        LinkButton.IsEnabled = CanLink(_h.Current, Tl.Selection.ToList());
         if (it is null) { PropsTitle.Text = "Nothing selected"; PropsHint.Visibility = Visibility.Visible; PropsBody.Visibility = Visibility.Collapsed; return; }
         PropsTitle.Text = it.Kind == ItemKind.Text ? "Text" : it.Label ?? Path.GetFileNameWithoutExtension(it.Source);
         PropsHint.Visibility = Visibility.Collapsed; PropsBody.Visibility = Visibility.Visible;
@@ -760,6 +778,7 @@ public partial class AdvancedEditor : UserControl
             case Key.C when !ctrl: RazorButton.IsChecked = RazorButton.IsChecked != true; Razor_Click(sender, e); break;
             case Key.S when ctrl: SaveProject(shift); break;
             case Key.M when !ctrl: _h.Apply(_h.Current.ToggleMarker(_t)); AfterEdit(); break;
+            case Key.L when ctrl: Link_Click(this, new RoutedEventArgs()); break;
             case Key.L when !ctrl: _loop = !_loop; StatusText.Text = _loop ? "Looping: playback starts over at the end (L turns it off)" : "Looping off"; break;
             case Key.C when ctrl: CopySelection(); break;
             case Key.V when ctrl: PasteAtPlayhead(); break;
