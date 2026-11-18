@@ -364,7 +364,7 @@ public partial class AdvancedEditor : UserControl
     private void FitVideo_Click(object sender, RoutedEventArgs e) => ApplyToSelection(o => o with { Scale = 1, PosX = 0.5, PosY = 0.5 }, "fit");
 
     /// <summary>A punch-in zoom or a shake on the selected item (or the picture under the playhead if nothing is selected), starting at the playhead.</summary>
-    private void Effect(bool shake)
+    private void AddEffect(bool shake)
     {
         var p = _h.Current;
         var it = _selected is { } sid ? p.Find(sid) : p.Items.FirstOrDefault(i => i.Kind == ItemKind.Video && _t >= i.Start && _t < i.End);
@@ -414,8 +414,8 @@ public partial class AdvancedEditor : UserControl
         StatusText.Text = $"Marked {times.Count} beats. Items snap to the markers (M adds or removes one at the playhead)";
     }
 
-    private void Punch_Click(object sender, RoutedEventArgs e) => Effect(false);
-    private void Shake_Click(object sender, RoutedEventArgs e) => Effect(true);
+    private void Punch_Click(object sender, RoutedEventArgs e) => AddEffect(false);
+    private void Shake_Click(object sender, RoutedEventArgs e) => AddEffect(true);
 
     /// <summary>Makes the selected video or picture small and puts it in a corner (or the middle) of the frame, like a facecam.</summary>
     private void Layout_Click(object sender, RoutedEventArgs e)
@@ -788,8 +788,8 @@ public partial class AdvancedEditor : UserControl
             case Key.D when ctrl: Duplicate(); break;
             case Key.E when ctrl: _ = ExportAsync(); break;
             case Key.Delete: DeleteSelected(shift); break;
-            case Key.P when !ctrl: Effect(false); break;
-            case Key.X when !ctrl: Effect(true); break;
+            case Key.P when !ctrl: AddEffect(false); break;
+            case Key.X when !ctrl: AddEffect(true); break;
             case Key.A when ctrl: Tl.SetSelection(_h.Current.Items.Select(i => i.Id)); _selected = Tl.Selected; ShowProps(); break;
             case Key.Z when ctrl: _h.Undo(); AfterEdit(); break;
             case Key.Y when ctrl: _h.Redo(); AfterEdit(); break;

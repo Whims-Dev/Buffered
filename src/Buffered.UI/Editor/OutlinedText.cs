@@ -27,7 +27,7 @@ public sealed class OutlinedText : FrameworkElement
     }
 
     /// <summary>Sets everything from an item's properties. <paramref name="size"/> is the size in pixels; the outline is a share of it.</summary>
-    public void Style(ItemProps p, double size)
+    public void Apply(ItemProps p, double size)
     {
         Text = p.Text ?? ""; Size = Math.Max(4, size);
         Font = new FontFamily(string.IsNullOrWhiteSpace(p.Font) ? "Segoe UI" : p.Font);

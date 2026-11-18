@@ -423,7 +423,7 @@ public partial class AdvancedEditor
             {
                 if (box.Child is not OutlinedText tb)
                     box.Child = tb = new OutlinedText { Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.75 } };
-                tb.Style(it.Props, H * it.Props.ValueAt(KeyProp.TextSize, at) * scale);
+                tb.Apply(it.Props, H * it.Props.ValueAt(KeyProp.TextSize, at) * scale);
             }
             else
             {

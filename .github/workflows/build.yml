@@ -18,3 +18,5 @@ jobs:
         run: dotnet run --project tests/PlayheadModel.Tests -c Release
       - name: Timeline tests
         run: dotnet run --project tests/TimelineModel.Tests -c Release
+      - name: Export tests
+        run: dotnet run --project tests/ExportGraph.Tests -c Release

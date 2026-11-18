@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\Buffered.UI\PlayheadModel.cs" Link="PlayheadModel.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Player\PlayheadModel.cs" Link="PlayheadModel.cs" />
   </ItemGroup>
 
 </Project>

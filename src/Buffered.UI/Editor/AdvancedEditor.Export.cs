@@ -184,7 +184,7 @@ public partial class AdvancedEditor
         double k = H / Math.Max(1, Stage.Height);
         double biggest = ExportGraph.TextRenderSize(it.Props);
         var tb = new OutlinedText { Effect = new DropShadowEffect { BlurRadius = 6 * k, ShadowDepth = 1 * k, Opacity = 0.75 } };
-        tb.Style(it.Props, H * biggest);
+        tb.Apply(it.Props, H * biggest);
         tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         int pad = (int)Math.Ceiling(10 * k * Math.Max(1, biggest * 12));
         int W = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Width) + 2 * pad), Hh = Math.Max(2, (int)Math.Ceiling(tb.DesiredSize.Height) + 2 * pad);

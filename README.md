@@ -62,8 +62,8 @@ Pushing a tag such as `v0.1.0` runs the release workflow, which downloads a chec
 
 - `src/Buffered.Core` is the recorder itself (capture, encoder, RAM buffer, audio, settings, the pipe between the two programs).
 - `src/Buffered.Recorder` is the tray program (`BufferedRecorder.exe`): hotkeys, the tray menu, and the pipe server.
-- `src/Buffered.UI` is the clip manager (`BufferedUI.exe`). The editor (`ClipPlayer`) is split by job into `ClipPlayer.*.cs`; where the playhead is drawn is decided by `PlayheadModel.cs`, which has tests.
-- `tests/PlayheadModel.Tests` is a small program that tries the playhead logic with made-up inputs. Run `dotnet run -c Release` inside that folder; every line should say `pass`. The build workflow runs it too.
+- `src/Buffered.UI` is the clip manager (`BufferedUI.exe`), in folders by job: `Player/` is the clip player and trimmer (`ClipPlayer.*.cs`, split by job; where the playhead is drawn is decided by `PlayheadModel.cs`, which has tests), `Editor/` is the advanced editor (timeline, project files, export graph), `Library/` is the clip list and thumbnails, `Sharing/` is Discord and file sharing, and `MainWindow/` holds the main window's partial classes.
+- `tests/PlayheadModel.Tests`, `tests/TimelineModel.Tests` and `tests/ExportGraph.Tests` are small programs that try the playhead logic, the editor's timeline logic and the export with made-up inputs. Run `dotnet run -c Release` inside a test folder; every line should say `pass`. The build workflow runs the first one too.
 
 ## How it works
 

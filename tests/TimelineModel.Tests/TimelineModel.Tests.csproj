@@ -9,9 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\Buffered.UI\TimelineModel.cs" Link="TimelineModel.cs" />
-    <Compile Include="..\..\src\Buffered.UI\Subtitles.cs" Link="Subtitles.cs" />
-    <Compile Include="..\..\src\Buffered.UI\BeatFinder.cs" Link="BeatFinder.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Editor\TimelineModel.cs" Link="TimelineModel.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Editor\Subtitles.cs" Link="Subtitles.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Editor\BeatFinder.cs" Link="BeatFinder.cs" />
   </ItemGroup>
 
 </Project>

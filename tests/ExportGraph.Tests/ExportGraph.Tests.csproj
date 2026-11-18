@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\Buffered.UI\TimelineModel.cs" Link="TimelineModel.cs" />
-    <Compile Include="..\..\src\Buffered.UI\ExportGraph.cs" Link="ExportGraph.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Editor\TimelineModel.cs" Link="TimelineModel.cs" />
+    <Compile Include="..\..\src\Buffered.UI\Editor\ExportGraph.cs" Link="ExportGraph.cs" />
   </ItemGroup>
 
 </Project>
