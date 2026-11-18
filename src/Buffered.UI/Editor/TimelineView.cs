@@ -721,8 +721,10 @@ public sealed class TimelineView : FrameworkElement
         {
             double t = T(p.X);
             var moving = _dragIds.SelectMany(i => b.GroupOf(i)).Distinct().ToList();   // everything selected, with the sound linked to each picture
-            if (b.SnapPoint(t, within, moving) is { } s) { t = s; _snapLine = s; }
-            else if (Math.Abs(_playhead - t) <= within) { t = _playhead; _snapLine = _playhead; }
+            // an edge being trimmed sticks to whatever is nearest: another item's edge, a marker or the playhead
+            double? edgeSnap = b.SnapPoint(t, within, moving), headSnap = Math.Abs(_playhead - t) <= within ? _playhead : null;
+            if (headSnap is { } hs && (edgeSnap is not { } es || Math.Abs(hs - t) <= Math.Abs(es - t))) { t = hs; _snapLine = hs; }
+            else if (edgeSnap is { } e2) { t = e2; _snapLine = e2; }
             bool left = _drag == Drag.TrimLeft;
             double delta = t - (left ? item.Start : item.End);      // each edge moves by as much as the one being dragged
             next = b;
