@@ -94,8 +94,9 @@ public static class ExportGraph
                 foreach (var t in TempoSteps(it.Props.Speed)) chain.Append($",atempo={N(t)}");
                 if (it.Props.HasKeys(KeyProp.Volume)) chain.Append($",volume=volume='{Curve(it.Props.FramesOf(KeyProp.Volume), 0)}':eval=frame");   // animated volume: a line between the keyframes, worked out as the sound goes by
                 else if (Math.Abs(it.Props.Volume - 1) > 0.001) chain.Append($",volume={N(it.Props.Volume)}");
-                if (it.Props.FadeIn > 0.001) chain.Append($",afade=t=in:st=0:d={N(it.Props.FadeIn)}");
-                if (it.Props.FadeOut > 0.001) chain.Append($",afade=t=out:st={N(Math.Max(0, len - it.Props.FadeOut))}:d={N(it.Props.FadeOut)}");
+                var (soundIn, soundOut) = it.Fades;
+                if (soundIn > 0.001) chain.Append($",afade=t=in:st=0:d={N(soundIn)}");
+                if (soundOut > 0.001) chain.Append($",afade=t=out:st={N(Math.Max(0, len - soundOut))}:d={N(soundOut)}");
                 long ms = (long)Math.Round(it.Start * 1000);
                 if (ms > 0) chain.Append($",adelay={ms}|{ms}");
                 chain.Append($"[{tag}]");
@@ -232,8 +233,9 @@ public static class ExportGraph
     private static string Fades(TimelineItem it, double len, bool alpha)
     {
         var parts = new List<string>();
-        if (it.Props.FadeIn > 0.001) parts.Add($"fade=t=in:st=0:d={N(it.Props.FadeIn)}:alpha=1");
-        if (it.Props.FadeOut > 0.001) parts.Add($"fade=t=out:st={N(Math.Max(0, len - it.Props.FadeOut))}:d={N(it.Props.FadeOut)}:alpha=1");
+        var (fin, fout) = it.Fades;
+        if (fin > 0.001) parts.Add($"fade=t=in:st=0:d={N(fin)}:alpha=1");
+        if (fout > 0.001) parts.Add($"fade=t=out:st={N(Math.Max(0, len - fout))}:d={N(fout)}:alpha=1");
         return string.Join(",", parts);
     }
 

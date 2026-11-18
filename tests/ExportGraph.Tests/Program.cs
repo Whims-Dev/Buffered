@@ -66,6 +66,31 @@ if (haveFfmpeg && File.Exists(clip))
     if (pc.ExitCode != 0) Console.WriteLine(cerr.Result.Trim());
     Check(pc.ExitCode == 0 && File.Exists(outc), "ffmpeg makes the cropped video");
     var fr = new ProcessStartInfo("ffmpeg") { UseShellExecute = false, CreateNoWindow = true }; foreach (var a in new[] { "-y", "-loglevel", "error", "-ss", "1", "-i", outc, "-frames:v", "1", "-vf", "scale=480:-2", Path.Combine(dir, "crop_a.png") }) fr.ArgumentList.Add(a); Process.Start(fr)!.WaitForExit();
+    int Run3(string exe, params string[] args) { var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true }; foreach (var a in args) psi.ArgumentList.Add(a); using var pr = Process.Start(psi)!; var err = pr.StandardError.ReadToEndAsync(); pr.StandardOutput.ReadToEnd(); pr.WaitForExit(); if (pr.ExitCode != 0) Console.WriteLine(err.Result.Trim()); return pr.ExitCode; }
+    // a picture's fade-out really ends at the end of the item: sample the middle of the frame while it fades
+    string white = Path.Combine(dir, "white.png");
+    Run3("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:s=800x600,format=rgba", "-frames:v", "1", white);
+    int Lum(string file, double at) { var q = new ProcessStartInfo("ffmpeg") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }; foreach (var a in new[] { "-loglevel", "error", "-ss", at.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", file, "-frames:v", "1", "-vf", "crop=1:1:640:360,format=gray", "-f", "rawvideo", "-" }) q.ArgumentList.Add(a); using var pr = Process.Start(q)!; var ms = new MemoryStream(); pr.StandardOutput.BaseStream.CopyTo(ms); pr.WaitForExit(); return ms.Length > 0 ? ms.ToArray()[0] : -1; }
+    foreach (var (name, props) in new (string, ItemProps)[]
+    {
+        ("plain", new ItemProps(FadeOut: 2)),
+        ("dimmer", new ItemProps(FadeOut: 2, Opacity: 0.8)),
+        ("turned", new ItemProps(FadeOut: 2, Rotation: 10)),
+        ("zooming", new ItemProps(FadeOut: 2).WithKey(KeyProp.Scale, 0, 1).WithKey(KeyProp.Scale, 5, 1.5)),
+        ("moving", new ItemProps(FadeOut: 2).WithKey(KeyProp.PosX, 0, 0.5).WithKey(KeyProp.PosX, 5, 0.52)),
+        ("fading in and out", new ItemProps(FadeIn: 1, FadeOut: 2)),
+        ("fades longer than the item", new ItemProps(FadeIn: 3, FadeOut: 4)),
+    })
+    {
+        var im = new TimelineItem(Guid.NewGuid(), ItemKind.Image, white, 0, 5, 2, props);
+        var pf = Project.Empty((TrackKind.Video, "V")).Add(0, im)!;
+        string fo = Path.Combine(dir, "fade_" + name.Replace(' ', '_') + ".mp4");
+        var gp = ExportGraph.Build(pf, o with { Width = 1280, Height = 720 }, _ => null, _ => null, _ => (800, 600));
+        int rc = Run3("ffmpeg", ExportGraph.Arguments(gp, o, fo, false).ToArray());
+        int a = Lum(fo, 4.0), m1 = Lum(fo, 5.5), m2 = Lum(fo, 6.0), m3 = Lum(fo, 6.5), z = Lum(fo, 6.9);
+        Console.WriteLine($"      {name}: 4.0s={a}  5.5s={m1}  6.0s={m2}  6.5s={m3}  6.9s={z}");
+        Check(rc == 0 && a > m1 && m1 > m2 && m2 > m3 && m3 > z && z < 40, $"a picture's fade-out is smooth and reaches nothing at its end ({name})");
+    }
 }
 
 else Console.WriteLine("skip  (no ffmpeg or sample clip here: the run test was not done)");

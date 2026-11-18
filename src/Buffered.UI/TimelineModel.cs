@@ -139,6 +139,20 @@ public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double 
     /// <summary>How long it lasts on the timeline (a faster item is shorter).</summary>
     [JsonIgnore] public double Length => Props.OutAt(SourceOut - SourceIn);
     [JsonIgnore] public double End => Start + Length;
+
+    /// <summary>
+    /// The fade in and fade out as they really play: never longer than the item, and if the two together are longer than it they are shortened in the same proportion,
+    /// so the fade out always ends with the item (an item trimmed shorter after its fades were set does not end half faded).
+    /// </summary>
+    [JsonIgnore] public (double In, double Out) Fades
+    {
+        get
+        {
+            double len = Length, fin = Math.Max(0, Props.FadeIn), fout = Math.Max(0, Props.FadeOut);
+            if (fin + fout > len && fin + fout > 0) { double k = len / (fin + fout); fin *= k; fout *= k; }
+            return (fin, fout);
+        }
+    }
 }
 
 /// <param name="HeightScale">How tall the lane is drawn compared with the normal height (1 is normal); the user drags it.</param>

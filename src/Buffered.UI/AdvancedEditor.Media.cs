@@ -433,8 +433,9 @@ public partial class AdvancedEditor
                 img.Width = W * 0.4 * scale;
             }
             double into = t - it.Start, left = it.End - t, env = 1;
-            if (it.Props.FadeIn > 0 && into < it.Props.FadeIn) env = Math.Min(env, into / it.Props.FadeIn);
-            if (it.Props.FadeOut > 0 && left < it.Props.FadeOut) env = Math.Min(env, left / it.Props.FadeOut);
+            var (fadeIn, fadeOut) = it.Fades;
+            if (fadeIn > 0 && into < fadeIn) env = Math.Min(env, into / fadeIn);
+            if (fadeOut > 0 && left < fadeOut) env = Math.Min(env, left / fadeOut);
             box.Opacity = Math.Clamp(it.Props.ValueAt(KeyProp.Opacity, at) * env, 0, 1);
             box.BorderThickness = new Thickness(Tl.Selection.Contains(it.Id) ? 1.5 : 0);
             box.RenderTransformOrigin = new Point(0.5, 0.5);

@@ -206,7 +206,7 @@ public partial class AdvancedEditor : UserControl
     {
         var lanes = proj.Tracks.Where(t => t.IsHeardIn(proj))
             .SelectMany(t => t.Items).Where(i => i.Kind == ItemKind.Audio)
-            .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Props.FadeIn, i.Props.FadeOut, i.Props.HasKeys(KeyProp.Volume) ? i.Props.FramesOf(KeyProp.Volume).ToArray() : null, i.Props)).ToArray();
+            .Select(i => new TimelineMixer.Lane($"{i.Source}#{i.Stream}", i.Start, i.SourceIn, i.Length, i.Props.Speed, (float)i.Props.Volume, i.Fades.In, i.Fades.Out, i.Props.HasKeys(KeyProp.Volume) ? i.Props.FramesOf(KeyProp.Volume).ToArray() : null, i.Props)).ToArray();
         _mixer.SetLanes(lanes);
     }
 
@@ -331,8 +331,9 @@ public partial class AdvancedEditor : UserControl
 
         // fades: the item's own, then its volume. A picture whose sound lanes were all deleted is played silent.
         double into = t - active.Start, left = active.End - t, env = 1;
-        if (active.Props.FadeIn > 0 && into < active.Props.FadeIn) env = Math.Min(env, into / active.Props.FadeIn);
-        if (active.Props.FadeOut > 0 && left < active.Props.FadeOut) env = Math.Min(env, left / active.Props.FadeOut);
+        var (fadeIn, fadeOut) = active.Fades;
+        if (fadeIn > 0 && into < fadeIn) env = Math.Min(env, into / fadeIn);
+        if (fadeOut > 0 && left < fadeOut) env = Math.Min(env, left / fadeOut);
         Video.Opacity = Math.Clamp(active.Props.ValueAt(KeyProp.Opacity, into) * env, 0, 1);
         Video.IsMuted = true;   // all sound comes from the sound items, through the mixer
         ApplyVideoTransform(Video, active);

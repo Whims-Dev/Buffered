@@ -265,4 +265,9 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   Check(Buffered.UI.BeatFinder.Find(new float[1000].Select(_ => 0.3f).ToArray(), 0.01).Count == 0, "a steady drone has no beats");
   var m = Base().AddMarkers(new[] { 1.0, 1.01, 2.0 }); Check(m.Marks.Count == 2, "markers close together are one"); }
 
+// Fades never outlast the item
+{ var it = new TimelineItem(Guid.NewGuid(), ItemKind.Image, "x.png", 0, 2, 0, new ItemProps(FadeIn: 1, FadeOut: 4));
+  var (fi, fo) = it.Fades; Check(Near(fi + fo, 2) && Near(fo, 1.6) && Near(fi, 0.4), "fades longer than the item are shortened together so the fade out ends with it");
+  var ok = it with { Props = new ItemProps(FadeIn: 0.5, FadeOut: 1) }; Check(Near(ok.Fades.In, 0.5) && Near(ok.Fades.Out, 1), "fades that fit are left alone"); }
+
 Console.WriteLine(fails == 0 ? "all passed" : $"{fails} FAILED"); return fails;

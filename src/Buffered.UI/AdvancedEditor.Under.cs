@@ -66,8 +66,9 @@ public partial class AdvancedEditor
             else if (!_playing && _v2Playing && !_frame2Timer.IsEnabled) { Video2.Pause(); _v2Playing = false; }
         }
         double into = t - under.Start, left = under.End - t, env = 1;
-        if (under.Props.FadeIn > 0 && into < under.Props.FadeIn) env = Math.Min(env, into / under.Props.FadeIn);
-        if (under.Props.FadeOut > 0 && left < under.Props.FadeOut) env = Math.Min(env, left / under.Props.FadeOut);
+        var (fadeIn, fadeOut) = under.Fades;
+        if (fadeIn > 0 && into < fadeIn) env = Math.Min(env, into / fadeIn);
+        if (fadeOut > 0 && left < fadeOut) env = Math.Min(env, left / fadeOut);
         Video2.Opacity = Math.Clamp(under.Props.ValueAt(KeyProp.Opacity, into) * env, 0, 1);
         Video2.IsMuted = true;
         ApplyVideoTransform(Video2, under);
