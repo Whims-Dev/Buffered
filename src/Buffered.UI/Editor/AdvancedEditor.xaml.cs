@@ -784,6 +784,7 @@ public partial class AdvancedEditor : UserControl
             case Key.L when ctrl: Link_Click(this, new RoutedEventArgs()); break;
             case Key.L when !ctrl: _loop = !_loop; StatusText.Text = _loop ? "Looping: playback starts over at the end (L turns it off)" : "Looping off"; break;
             case Key.C when ctrl: CopySelection(); break;
+            case Key.X when ctrl: CutSelection(); break;
             case Key.V when ctrl: PasteAtPlayhead(); break;
             case Key.D when ctrl: Duplicate(); break;
             case Key.E when ctrl: _ = ExportAsync(); break;

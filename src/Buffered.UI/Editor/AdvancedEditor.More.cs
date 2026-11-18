@@ -87,6 +87,17 @@ public partial class AdvancedEditor
         StatusText.Text = $"Copied {_clipboard.Count} item{(_clipboard.Count == 1 ? "" : "s")}: Ctrl+V pastes at the playhead";
     }
 
+    /// <summary>Ctrl+X: copies the selected items and takes them off the timeline (Ctrl+V puts them back, anywhere).</summary>
+    private void CutSelection()
+    {
+        if (Tl.Selection.Count == 0) { StatusText.Text = "Select something to cut first"; return; }
+        var picked = _h.Current.Pick(Tl.Selection);
+        DeleteSelected(false);
+        if (_h.Current.Items.Any(i => picked.Any(x => x.Item.Id == i.Id))) { StatusText.Text = "That is on a locked lane, so it can't be cut"; return; }   // nothing was removed: keep the old clipboard
+        _clipboard = picked;
+        StatusText.Text = $"Cut {picked.Count} item{(picked.Count == 1 ? "" : "s")}: Ctrl+V pastes at the playhead";
+    }
+
     private void PasteAtPlayhead()
     {
         if (_clipboard.Count == 0) { StatusText.Text = "Nothing copied yet"; return; }
