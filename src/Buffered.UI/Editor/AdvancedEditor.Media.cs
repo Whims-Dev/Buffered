@@ -334,7 +334,7 @@ public partial class AdvancedEditor
     /// <summary>A video: its picture on a picture lane and each of its sound tracks (if it has a companion file) on a sound lane, linked.</summary>
     private async Task AddClipAsync(string path, string label, double time, int hintLane)
     {
-        double dur = await Media.GetDurationSecondsAsync(path) ?? 0;
+        double dur = await Media.GetPictureSecondsAsync(path) ?? 0;   // the picture's length, which the clip and all its sound items share
         if (dur <= 0) { StatusText.Text = "Couldn't read that file's length"; return; }
         TimelineView.SourceLengths[path] = dur;
         _ = MakeThumbsAsync(path, _openId);

@@ -329,6 +329,25 @@ internal static class Media
     }
 
     /// <summary>
+    /// How long a clip's picture lasts. A file's length is the longer of its picture and its sound, and the picture of a saved clip is sometimes a bit shorter than the sound,
+    /// so the editor uses the picture's own length (when it can be read) for the clip and for its sound, which keeps them the same length.
+    /// </summary>
+    public static async Task<double?> GetPictureSecondsAsync(string clip)
+    {
+        double? whole = await GetDurationSecondsAsync(clip);
+        if (whole is not > 0) return whole;
+        await Gate.WaitAsync();
+        try
+        {
+            var (code, output) = await RunAsync(Tools.Ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "csv=p=0", clip);
+            if (code == 0 && double.TryParse(output.Trim().Split((char)10)[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pic) && pic > 0.05 && pic < whole)
+                return pic;
+            return whole;
+        }
+        finally { Gate.Release(); }
+    }
+
+    /// <summary>
     /// A clip's length from ffprobe. The answer is remembered on disk (keyed by path, size and modified time, like thumbnails),
     /// so a library is only probed once instead of at every launch.
     /// </summary>

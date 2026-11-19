@@ -91,7 +91,7 @@ public partial class AdvancedEditor : UserControl
         Release(); _hasSession = true; StartPanel.Visibility = Visibility.Collapsed;
         TitleText.Text = clip.Label;
         using var openJob = Job("Opening…");
-        double dur = await Media.GetDurationSecondsAsync(clip.Path) ?? 0;
+        double dur = await Media.GetPictureSecondsAsync(clip.Path) ?? 0;   // the picture's length, which the clip and all its sound items share
         if (dur <= 0) { StatusText.Text = "Couldn't read this clip's length"; return; }
         TimelineView.SourceLengths[clip.Path] = dur;
         if (File.Exists(ClipNames.StemsPath(clip.Path))) TimelineView.SourceLengths[ClipNames.StemsPath(clip.Path)] = dur;   // the sound file is as long as the clip: remembered with the edit so trims stay inside it
