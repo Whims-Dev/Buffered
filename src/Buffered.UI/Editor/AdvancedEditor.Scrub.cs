@@ -14,7 +14,7 @@ public partial class AdvancedEditor
 {
     private bool _scrubBusy;                  // a jump is in progress (the cover is up)
     private double _scrubTarget, _scrubStepTarget;
-    private readonly DispatcherTimer _scrubTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
+    private readonly DispatcherTimer _scrubTimer = new() { Interval = TimeSpan.FromMilliseconds(55) };
     private int _scrubPhase;                  // 0: playing briefly after the jump, 1: paused on the picture, waiting for it to be drawn
 
     private void InitScrub() => _scrubTimer.Tick += (_, _) => ScrubTick();
@@ -35,7 +35,7 @@ public partial class AdvancedEditor
         }
         try { Video.Pause(); Video.Position = TimeSpan.FromSeconds(_scrubStepTarget); Video.Play(); _videoPlaying = true; }
         catch (InvalidOperationException) { }
-        _scrubTimer.Interval = TimeSpan.FromMilliseconds(90); _scrubTimer.Stop(); _scrubTimer.Start();
+        _scrubTimer.Interval = TimeSpan.FromMilliseconds(55); _scrubTimer.Stop(); _scrubTimer.Start();
     }
 
     private void ScrubTick()
@@ -44,10 +44,17 @@ public partial class AdvancedEditor
         if (_playing) { CancelScrub(); return; }
         if (_scrubPhase == 0)
         {
+            // still being moved: no time to settle exactly, go straight on to the newest place (what it shows now is close enough for the cover)
+            if (Math.Abs(_scrubTarget - _scrubStepTarget) > 1e-4)
+            {
+                if (TakePicture() is { } now) { SeekCover.Source = now; MirrorCover(); }
+                ScrubStep();
+                return;
+            }
             // it has had a moment to show the new picture: stop on it, and give it a moment to be drawn
             try { Video.Pause(); Video.Position = TimeSpan.FromSeconds(_scrubStepTarget); } catch (InvalidOperationException) { }
             _videoPlaying = false; _scrubPhase = 1;
-            _scrubTimer.Interval = TimeSpan.FromMilliseconds(60); _scrubTimer.Start();
+            _scrubTimer.Interval = TimeSpan.FromMilliseconds(45); _scrubTimer.Start();
             return;
         }
         // the player should now show the picture: keep it in the cover for the next step, or take the cover off if that was the last
