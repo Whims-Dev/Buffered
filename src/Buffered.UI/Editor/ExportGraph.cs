@@ -16,7 +16,7 @@ public static class ExportGraph
     /// <summary>The filters this command needs; an ffmpeg without them cannot make the export.</summary>
     public static readonly string[] RequiredFilters =
     {
-        "color", "overlay", "fade", "colorchannelmixer", "setpts", "fps", "scale", "pad", "format", "atempo", "volume", "afade", "adelay", "amix", "alimiter", "aformat", "aresample", "apad",
+        "color", "overlay", "fade", "colorchannelmixer", "setpts", "fps", "scale", "pad", "format", "atempo", "volume", "afade", "adelay", "amix", "alimiter", "aformat", "aresample", "apad", "tpad", "trim",
     };
 
     public sealed record Plan(List<string> InputArgs, string FilterGraph, bool HasAudio, double Duration);
@@ -52,7 +52,8 @@ public static class ExportGraph
                 if (it.Kind == ItemKind.Video)
                 {
                     inputs.AddRange(new[] { "-ss", N(it.SourceIn), "-t", N(it.SourceOut - it.SourceIn), "-i", it.Source });
-                    graph.Append($"[{index}:v]setpts=(PTS-STARTPTS)/{N(it.Props.Speed)},fps={o.Fps},scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease");
+                    // the picture of a file is often a little shorter than its sound: its last picture is held until the item ends (and no longer), so the end is never black
+                    graph.Append($"[{index}:v]setpts=(PTS-STARTPTS)/{N(it.Props.Speed)},fps={o.Fps},tpad=stop_mode=clone:stop_duration={N(len)},trim=duration={N(len)},setpts=PTS-STARTPTS,scale={o.Width}:{o.Height}:force_original_aspect_ratio=decrease");
                     graph.Append(CropBy(it.Props));
                     graph.Append(ScaleBy(it, "iw", "ih", 1));                                                           // zoomed in or out; what goes past the frame is cut off by the overlay
                     graph.Append(alpha ? ",format=yuva420p" : "").Append(RotateBy(it)).Append(post).Append($",setpts=PTS+{N(it.Start)}/TB[{tag}];");

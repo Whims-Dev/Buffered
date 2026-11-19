@@ -91,6 +91,16 @@ if (haveFfmpeg && File.Exists(clip))
         Console.WriteLine($"      {name}: 4.0s={a}  5.5s={m1}  6.0s={m2}  6.5s={m3}  6.9s={z}");
         Check(rc == 0 && a > m1 && m1 > m2 && m2 > m3 && m3 > z && z < 40, $"a picture's fade-out is smooth and reaches nothing at its end ({name})");
     }
+    // a clip whose picture ends before its sound (the picture is shorter than the file) holds its last frame instead of going black
+    string shortV = Path.Combine(dir, "short_picture.mp4"), shortOut = Path.Combine(dir, "short_out.mp4");
+    Run3("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:s=640x360:r=30:d=2", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", shortV);
+    var sv = new TimelineItem(Guid.NewGuid(), ItemKind.Video, shortV, 0, 3, 0, new ItemProps());
+    var sp = Project.Empty((TrackKind.Video, "V")).Add(0, sv)!;
+    var sg = ExportGraph.Build(sp, o with { Width = 1280, Height = 720 }, _ => null, _ => null, _ => null);
+    int src = Run3("ffmpeg", ExportGraph.Arguments(sg, o, shortOut, false).ToArray());
+    int early = Lum(shortOut, 1.0), late = Lum(shortOut, 2.7);
+    Console.WriteLine($"      short picture: 1.0s={early}  2.7s={late}");
+    Check(src == 0 && early > 200 && late > 200, "when a clip's picture ends before its sound, the last picture is held (no black at the end)");
 }
 
 else Console.WriteLine("skip  (no ffmpeg or sample clip here: the run test was not done)");
