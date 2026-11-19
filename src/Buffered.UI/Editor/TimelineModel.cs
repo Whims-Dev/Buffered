@@ -693,7 +693,8 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
 }
 
 /// <summary>An edit as it is saved: the project plus what is needed to open it again (its name, the picture's shape, how long each source file is).</summary>
-public sealed record ProjectFile(int Version, string Name, double Aspect, Project Project, Dictionary<string, double> SourceLengths)
+/// <param name="Pool">The files in the media pool (the full paths, or relative ones in a portable edit). Null in edits saved before the pool was kept.</param>
+public sealed record ProjectFile(int Version, string Name, double Aspect, Project Project, Dictionary<string, double> SourceLengths, List<string>? Pool = null)
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
 
@@ -717,6 +718,7 @@ public sealed record ProjectFile(int Version, string Name, double Aspect, Projec
             }).ToImmutableList(),
         },
         SourceLengths = SourceLengths.GroupBy(kv => map(kv.Key), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase),
+        Pool = Pool?.Select(map).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
     };
 
     /// <summary>Turns the file paths that are relative (as in a portable edit) into full paths, counting from the folder the edit file is in.</summary>

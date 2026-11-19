@@ -18,6 +18,7 @@ public partial class AdvancedEditor
 
     private string? _projectPath;                 // the file this edit is saved in, once it has been saved
     private string _projectName = "";
+    private string _savedPool = "";               // the media pool as it was last saved or opened
     private Project? _savedProject;               // the edit as it was last saved or opened: anything else is unsaved
     private string? _clipKey;                     // the clip this editor was opened from (for its autosave)
     private readonly DispatcherTimer _autosaveTimer = new() { Interval = TimeSpan.FromSeconds(20) };
@@ -49,7 +50,7 @@ public partial class AdvancedEditor
     private async void Recent_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e) { if (RecentList.SelectedItem is RecentEdit r) await OpenFileAsync(r.Path); }
 
     /// <summary>True when there is work that has not been saved.</summary>
-    public bool IsDirty => _savedProject is not null && !ReferenceEquals(_savedProject, _h.Current);
+    public bool IsDirty => _savedProject is not null && (!ReferenceEquals(_savedProject, _h.Current) || PoolKey() != _savedPool);
 
     private void InitProject()
     {
@@ -63,7 +64,7 @@ public partial class AdvancedEditor
     private string AutoPath(string key) => Path.Combine(ProjectsDir, "autosave", Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(key)))[..16] + Extension);
 
     private ProjectFile Snapshot() =>
-        new(1, string.IsNullOrWhiteSpace(_projectName) ? TitleText.Text : _projectName, _aspect, _h.Current, new Dictionary<string, double>(TimelineView.SourceLengths, StringComparer.OrdinalIgnoreCase));
+        new(1, string.IsNullOrWhiteSpace(_projectName) ? TitleText.Text : _projectName, _aspect, _h.Current, new Dictionary<string, double>(TimelineView.SourceLengths, StringComparer.OrdinalIgnoreCase), _imported.Select(e => e.Path).ToList());
 
     /// <summary>Called when a clip is opened in the editor: forgets the last edit's file and looks for an unsaved edit of this clip.</summary>
     private Task BeginProjectAsync(ClipItem clip) => BeginProjectCoreAsync(clip.Path, clip.Label, "this clip");
@@ -71,7 +72,7 @@ public partial class AdvancedEditor
     private async Task BeginProjectCoreAsync(string key, string name, string what)
     {
         _projectPath = null; _projectName = name; _clipKey = key;
-        _savedProject = _h.Current;
+        _savedProject = _h.Current; _savedPool = PoolKey();
         if (File.Exists(AutoPath(key)) && ProjectFile.FromJson(await File.ReadAllTextAsync(AutoPath(key))) is { } auto && auto.Project.Items.Any() && Dialogs is not null)
         {
             var when = File.GetLastWriteTime(AutoPath(key));
@@ -224,9 +225,11 @@ public partial class AdvancedEditor
         int open = ++_openId;
 
         foreach (var kv in file.SourceLengths) TimelineView.SourceLengths[kv.Key] = kv.Value;
+        if (file.Pool is not null) SetPool(file.Pool);   // the media pool belongs to the edit (an edit saved before that keeps the pool as it is)
         _h = new EditHistory(file.Project);
         _aspect = file.Aspect > 0.1 ? file.Aspect : 16.0 / 9; _aspectSet = true; FitStage(); ShowAspect();
         _projectPath = path; _projectName = file.Name; TitleText.Text = file.Name;
+        _savedPool = PoolKey();
         _savedProject = unsaved ? Project.Empty() : file.Project;   // an edit restored from the autosave counts as unsaved (a different object, so it shows as changed)
         _t = 0; Tl.SetSelection(Array.Empty<Guid>()); _selected = null;
         _deferSync = true;
@@ -277,7 +280,7 @@ public partial class AdvancedEditor
     private async Task SavePortableAsync()
     {
         var pf = Snapshot();
-        var sources = pf.Project.Items.Where(i => i.Kind != ItemKind.Text && i.Source.Length > 0).Select(i => i.Source).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var sources = pf.Project.Items.Where(i => i.Kind != ItemKind.Text && i.Source.Length > 0).Select(i => i.Source).Concat(pf.Pool ?? new List<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var missing = sources.Where(s => !File.Exists(s)).ToList();
         if (missing.Count > 0) { Dialogs?.Toast("Can't pack this edit", $"{Path.GetFileName(missing[0])} is missing" + (missing.Count > 1 ? $" (and {missing.Count - 1} more)" : ""), error: true); return; }
         Directory.CreateDirectory(ProjectsDir);
@@ -331,5 +334,5 @@ public partial class AdvancedEditor
     }
 
     /// <summary>Throws away the current edit's autosave (the user chose not to keep it).</summary>
-    public void DiscardUnsaved() { _savedProject = _h.Current; DeleteAutoSave(); }
+    public void DiscardUnsaved() { _savedProject = _h.Current; _savedPool = PoolKey(); DeleteAutoSave(); }
 }

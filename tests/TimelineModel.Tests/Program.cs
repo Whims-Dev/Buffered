@@ -285,4 +285,14 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   Check(back is not null && back.Project.Tracks[0].Kind == TrackKind.Effect && back.Project.Find(fx.Id)!.Props.Effect == Effects.Transition && back.Project.Find(fx.Id)!.Kind == ItemKind.Effect, "effects survive being saved and opened");
   var (pasted, ids) = pf.Paste(pf.Pick(new[] { fx.Id }), 5); Check(ids.Count == 1 && pasted.Find(ids[0])!.Kind == ItemKind.Effect && pasted.Tracks.Any(t => t.Kind == TrackKind.Effect && t.Items.Any(i => i.Id == ids[0])), "a pasted effect goes back on an effect lane"); }
 
+// The media pool is kept with the edit
+{ var pool = new List<string> { @"D:\sfx\boom.wav", @"D:\pics\logo.png" };
+  var file = new ProjectFile(1, "n", 1.7, Base(), new Dictionary<string, double>(), pool);
+  var back = ProjectFile.FromJson(file.ToJson());
+  Check(back is not null && back.Pool is { Count: 2 } && back.Pool[0] == @"D:\sfx\boom.wav", "the media pool is saved with the edit and comes back");
+  var old = ProjectFile.FromJson("{\"Version\":1,\"Name\":\"old\",\"Aspect\":1.7,\"Project\":{\"Tracks\":[],\"Markers\":null},\"SourceLengths\":{}}");
+  Check(old is not null && old.Pool is null, "an edit saved before the pool was kept opens, with no pool recorded");
+  var portable = file.MapSources(x => @"media\" + System.IO.Path.GetFileName(x));
+  Check(portable.Pool![0] == @"media\boom.wav" && portable.ResolveFrom(@"E:\Pack").Pool![1] == @"E:\Pack\media\logo.png", "the pool's paths follow the edit when it is made portable and opened again"); }
+
 Console.WriteLine(fails == 0 ? "all passed" : $"{fails} FAILED"); return fails;

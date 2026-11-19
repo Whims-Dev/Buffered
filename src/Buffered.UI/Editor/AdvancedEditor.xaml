@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:Buffered.UI"
              Focusable="True" FocusVisualStyle="{x:Null}">
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <!-- line icons drawn as paths; they take the colour of the button's text, so they dim when the button is disabled -->
         <Style x:Key="ToolIcon" TargetType="Path">
             <Setter Property="Width" Value="18"/><Setter Property="Height" Value="18"/><Setter Property="Stretch" Value="Uniform"/>
@@ -70,12 +71,13 @@
                     </UniformGrid>
                     <Grid x:Name="MediaTab" Grid.Row="1">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                        <UniformGrid Columns="2" Margin="0,0,0,8">
+                        <UniformGrid Columns="3" Margin="0,0,0,8">
                             <RadioButton x:Name="ViewClips" Content="Clips" GroupName="MediaView" IsChecked="True" Style="{StaticResource SegButton}" Height="26" FontSize="12" Checked="MediaView_Checked" ToolTip="Your recordings from the library"/>
-                            <RadioButton x:Name="ViewPool" Content="Media pool" GroupName="MediaView" Style="{StaticResource SegButton}" Height="26" FontSize="12" Checked="MediaView_Checked" ToolTip="Files you brought in: videos, pictures, GIFs and sounds"/>
+                            <RadioButton x:Name="ViewPool" Content="Pool" GroupName="MediaView" Style="{StaticResource SegButton}" Height="26" FontSize="12" Checked="MediaView_Checked" ToolTip="The media pool: files you brought in for this edit (saved with it)"/>
+                            <RadioButton x:Name="ViewFavorites" Content="Favorites" GroupName="MediaView" Style="{StaticResource SegButton}" Height="26" FontSize="12" Checked="MediaView_Checked" ToolTip="Files you starred: kept for every edit"/>
                         </UniformGrid>
                         <StackPanel x:Name="PoolHeader" Grid.Row="1" Visibility="Collapsed">
-                            <Button Content="Import files…" HorizontalAlignment="Stretch" Height="30" Margin="0,0,0,8" Click="Import_Click" ToolTip="Videos, pictures, GIFs, sound files or subtitles (.srt) from your computer. You can also drop files on the window."/>
+                            <Button x:Name="ImportButton" Content="Import files…" HorizontalAlignment="Stretch" Height="30" Margin="0,0,0,8" Click="Import_Click" ToolTip="Videos, pictures, GIFs, sound files or subtitles (.srt) from your computer. You can also drop files on the window."/>
                             <TextBlock x:Name="PoolEmpty" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,8" Text="Nothing here yet. Import files or drop them on the window and they stay in this pool while you work. Right-click one to take it out."/>
                         </StackPanel>
                         <ListBox x:Name="MediaList" Grid.Row="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -83,7 +85,7 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="0,2">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <Border Width="56" Height="32" CornerRadius="3" Background="#2A2A2A" ClipToBounds="True">
                                             <Grid>
                                                 <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
@@ -94,6 +96,8 @@
                                             <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" FontSize="12.5"/>
                                             <TextBlock Text="{Binding Detail}" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
+                                        <Button Grid.Column="2" Content="{Binding Star}" Click="Star_Click" Width="28" Height="28" Padding="0" MinWidth="0" Background="Transparent" BorderThickness="0" FontSize="16" ToolTip="Favorite: keep this file for every edit"
+                                                Visibility="{Binding CanFavorite, Converter={StaticResource BoolToVis}}"/>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>

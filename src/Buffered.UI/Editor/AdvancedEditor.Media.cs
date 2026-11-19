@@ -10,8 +10,16 @@ using System.Windows.Media.Imaging;
 namespace Buffered.UI;
 
 /// <summary>One thing in the media panel that can be put on the timeline.</summary>
-public sealed class MediaEntry
+public sealed class MediaEntry : System.ComponentModel.INotifyPropertyChanged
 {
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    private bool _favorite;
+    /// <summary>Starred: kept in the favourites, which every edit can use.</summary>
+    public bool Favorite { get => _favorite; set { if (_favorite == value) return; _favorite = value; PropertyChanged?.Invoke(this, new(nameof(Favorite))); PropertyChanged?.Invoke(this, new(nameof(Star))); } }
+    public string Star => _favorite ? "\u2605" : "\u2606";
+    /// <summary>Only files you brought in can be starred, not recordings.</summary>
+    public bool CanFavorite { get; init; }
+
     public required string Path { get; init; }
     public required string Label { get; init; }
     public required ItemKind Kind { get; init; }
@@ -37,6 +45,7 @@ public partial class AdvancedEditor
     {
         MediaList.ItemsSource = _entries;
         _imported.CollectionChanged += (_, _) => ShowPoolHint();
+        LoadFavorites();
         Tl.MediaDropped += (data, lane, time) => { if (data is MediaEntry e) _ = AddMediaAsync(e, time, lane); };
         foreach (var hex in new[] { "#FFFFFF", "#111111", "#FFD84D", "#FF6B6B", "#6BCB77", "#4D9DFF", "#C77DFF" })
         {
@@ -90,14 +99,88 @@ public partial class AdvancedEditor
     /// <summary>Clips and the media pool are two lists: the recordings from the library, and the files that were brought in.</summary>
     private void MediaView_Checked(object sender, RoutedEventArgs e)
     {
-        if (MediaList is null || ViewPool is null) return;
-        bool pool = ViewPool.IsChecked == true;
-        MediaList.ItemsSource = pool ? _imported : _entries;
-        PoolHeader.Visibility = pool ? Visibility.Visible : Visibility.Collapsed;
+        if (MediaList is null || ViewPool is null || ViewFavorites is null) return;
+        bool pool = ViewPool.IsChecked == true, favorites = ViewFavorites.IsChecked == true;
+        MediaList.ItemsSource = pool ? _imported : favorites ? _favorites : _entries;
+        PoolHeader.Visibility = pool || favorites ? Visibility.Visible : Visibility.Collapsed;
+        ImportButton.Visibility = pool ? Visibility.Visible : Visibility.Collapsed;
         ShowPoolHint();
     }
 
-    private void ShowPoolHint() { if (PoolEmpty is not null) PoolEmpty.Visibility = _imported.Count == 0 ? Visibility.Visible : Visibility.Collapsed; }
+    private void ShowPoolHint()
+    {
+        if (PoolEmpty is null || ViewFavorites is null) return;
+        bool favorites = ViewFavorites.IsChecked == true;
+        PoolEmpty.Text = favorites ? "Star a file in the media pool and it is kept here for every edit: pictures, GIFs and sound effects you use again and again."
+                                   : "Nothing here yet. Import files or drop them on the window. The pool is saved with the edit. Right-click one to take it out.";
+        PoolEmpty.Visibility = (favorites ? _favorites.Count : _imported.Count) == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ---- the media pool belongs to the edit; favourites belong to you
+
+    private string PoolKey() => string.Join("|", _imported.Select(e => e.Path));
+
+    /// <summary>Makes the pool hold exactly these files (the ones that are still there).</summary>
+    private void SetPool(IEnumerable<string> paths)
+    {
+        _imported.Clear();
+        foreach (var f in paths.Where(f => IsMediaFile(f) && System.IO.File.Exists(f)).Distinct(StringComparer.OrdinalIgnoreCase)) _imported.Add(MakeEntry(f));
+    }
+
+    private readonly ObservableCollection<MediaEntry> _favorites = new();
+    private readonly HashSet<string> _favoritePaths = new(StringComparer.OrdinalIgnoreCase);
+    private static string FavoritesFile => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buffered", "editor-favorites.json");
+
+    private void LoadFavorites()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(FavoritesFile)) return;
+            var paths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(System.IO.File.ReadAllText(FavoritesFile)) ?? new();
+            foreach (var f in paths.Where(f => System.IO.File.Exists(f) && IsMediaFile(f)))
+            { _favoritePaths.Add(f); _favorites.Add(MakeEntry(f)); }
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { }
+        foreach (var e in _favorites) e.Favorite = true;
+    }
+
+    private void SaveFavorites()
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(FavoritesFile)!);
+            System.IO.File.WriteAllText(FavoritesFile, System.Text.Json.JsonSerializer.Serialize(_favorites.Select(e => e.Path).ToList()));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>The star on a file in the pool (or in the favourites list, which takes it out of there).</summary>
+    private void Star_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as FrameworkElement)?.DataContext is not MediaEntry entry) return;
+        bool now = !_favoritePaths.Contains(entry.Path);
+        if (now) { _favoritePaths.Add(entry.Path); _favorites.Add(MakeEntry(entry.Path)); }
+        else { _favoritePaths.Remove(entry.Path); foreach (var f in _favorites.Where(f => string.Equals(f.Path, entry.Path, StringComparison.OrdinalIgnoreCase)).ToList()) _favorites.Remove(f); }
+        foreach (var x in _imported.Concat(_favorites).Where(x => string.Equals(x.Path, entry.Path, StringComparison.OrdinalIgnoreCase))) x.Favorite = now;
+        entry.Favorite = now;
+        SaveFavorites(); ShowPoolHint();
+    }
+
+    /// <summary>The media panel's entry for a file: its kind from the name, and a small picture for pictures.</summary>
+    private MediaEntry MakeEntry(string f)
+    {
+        string ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
+        var kind = ImageExt.Contains(ext) ? ItemKind.Image : AudioExt.Contains(ext) ? ItemKind.Audio : ItemKind.Video;
+        ImageSource? thumb = null;
+        if (kind == ItemKind.Image)
+        {
+            try { var b = new BitmapImage(); b.BeginInit(); b.CacheOption = BitmapCacheOption.OnLoad; b.DecodePixelWidth = 112; b.UriSource = new Uri(f); b.EndInit(); b.Freeze(); thumb = b; }
+            catch (Exception ex) when (ex is IOException or NotSupportedException) { }
+        }
+        return new MediaEntry { Path = f, Label = System.IO.Path.GetFileNameWithoutExtension(f), Kind = kind, Thumb = thumb, CanFavorite = true, Favorite = _favoritePaths.Contains(f),
+                                Detail = kind == ItemKind.Image ? "Picture" : kind == ItemKind.Audio ? "Sound" : "Video" };
+    }
 
     /// <summary>Right click on something in the media pool: take it out of the pool (it stays on the timeline if it is already there).</summary>
     private void MediaList_RightClick(object sender, MouseButtonEventArgs e)
@@ -174,15 +257,7 @@ public partial class AdvancedEditor
         foreach (var srt in files.Where(f => System.IO.Path.GetExtension(f).Equals(".srt", StringComparison.OrdinalIgnoreCase))) ImportSubtitles(srt);
         foreach (var f in files.Where(f => !System.IO.Path.GetExtension(f).Equals(".srt", StringComparison.OrdinalIgnoreCase)).Where(f => IsMediaFile(f) && !_imported.Any(i => string.Equals(i.Path, f, StringComparison.OrdinalIgnoreCase))))
         {
-            string ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
-            var kind = ImageExt.Contains(ext) ? ItemKind.Image : AudioExt.Contains(ext) ? ItemKind.Audio : ItemKind.Video;
-            ImageSource? thumb = null;
-            if (kind == ItemKind.Image)
-            {
-                try { var b = new BitmapImage(); b.BeginInit(); b.CacheOption = BitmapCacheOption.OnLoad; b.DecodePixelWidth = 112; b.UriSource = new Uri(f); b.EndInit(); b.Freeze(); thumb = b; }
-                catch (Exception ex) when (ex is IOException or NotSupportedException) { }
-            }
-            var entry = new MediaEntry { Path = f, Label = System.IO.Path.GetFileNameWithoutExtension(f), Kind = kind, Thumb = thumb, Detail = kind == ItemKind.Image ? "Picture" : kind == ItemKind.Audio ? "Sound" : "Video" };
+            var entry = MakeEntry(f);
             _imported.Add(entry);
         }
     }
