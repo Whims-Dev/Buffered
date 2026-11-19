@@ -271,14 +271,18 @@ Project Base() => Project.Empty((TrackKind.Video, "V1"), (TrackKind.Video, "V2")
   var ok = it with { Props = new ItemProps(FadeIn: 0.5, FadeOut: 1) }; Check(Near(ok.Fades.In, 0.5) && Near(ok.Fades.Out, 1), "fades that fit are left alone"); }
 
 // Effect lanes
-{ var fx = new TimelineItem(Guid.NewGuid(), ItemKind.Effect, "", 0, 1, 2, new ItemProps(Effect: Effects.DipBlack));
+{ var fx = new TimelineItem(Guid.NewGuid(), ItemKind.Effect, "", 0, 1, 2, new ItemProps(Effect: Effects.Transition));
   var pe = Base().AddTrack(TrackKind.Effect, "Effects"); Check(pe.Tracks[0].Kind == TrackKind.Effect, "an effect lane goes on top");
   var pf = pe.Add(0, fx)!; Check(pf.Find(fx.Id) is { } f && Near(f.Length, 1) && Near(f.End, 3), "an effect lasts as long as it is given");
   Check(pe.Add(1, fx) is not null, "(the model leaves it to the editor to put each kind on its own kind of lane)");
-  Check(Near(Effects.Strength(Effects.DipBlack, 0.5, 1), 1) && Near(Effects.Strength(Effects.DipBlack, 0, 1), 0) && Near(Effects.Strength(Effects.DipBlack, 1, 1), 0) && Near(Effects.Strength(Effects.DipBlack, 0.25, 1), 0.5), "a transition peaks in the middle and is gone at both ends");
-  Check(Near(Effects.Strength(Effects.Shake, 0, 1), 1) && Near(Effects.Strength(Effects.Shake, 1, 1), 0) && Near(Effects.Strength(Effects.Shake, 2, 1), 0), "a shake starts strong and dies away");
+  var dip = new ItemProps(Effect: Effects.Transition); var flash = new ItemProps(Effect: Effects.Transition, Peak: 0.1); var held = new ItemProps(Effect: Effects.Transition, Hold: 0.5); var shake = new ItemProps(Effect: Effects.Shake);
+  Check(Near(Effects.Strength(dip, 0.5, 1), 1) && Near(Effects.Strength(dip, 0, 1), 0) && Near(Effects.Strength(dip, 1, 1), 0) && Near(Effects.Strength(dip, 0.25, 1), 0.5), "a transition with default properties peaks in the middle and is gone at both ends");
+  Check(Near(Effects.Strength(flash, 0.1, 1), 1) && Near(Effects.Strength(flash, 0.55, 1), 0.5) && Near(Effects.Strength(flash, 1, 1), 0), "moving its peak early makes the same transition a flash");
+  Check(Near(Effects.Strength(held, 0.25, 1), 1) && Near(Effects.Strength(held, 0.5, 1), 1) && Near(Effects.Strength(held, 0.75, 1), 1) && Near(Effects.Strength(held, 0.125, 1), 0.5), "holding keeps it at full strength for a while");
+  Check(Near(Effects.Strength(shake, 0, 1), 1) && Near(Effects.Strength(shake, 1, 1), 0) && Near(Effects.Strength(shake, 2, 1), 0), "a shake starts strong and dies away");
+  Check(Effects.IsTransition("dip-black") && Effects.ColorOf(new ItemProps(Effect: "dip-white")) == "#FFFFFF" && Effects.ColorOf(new ItemProps(Effect: "dip-black")) == "#000000" && Effects.NameOf("dip-black") == "Transition", "the early dip effects are read as transitions with their colour");
   var back = ProjectFile.FromJson(new ProjectFile(1, "x", 1.7, pf, new Dictionary<string, double>()).ToJson());
-  Check(back is not null && back.Project.Tracks[0].Kind == TrackKind.Effect && back.Project.Find(fx.Id)!.Props.Effect == Effects.DipBlack && back.Project.Find(fx.Id)!.Kind == ItemKind.Effect, "effects survive being saved and opened");
+  Check(back is not null && back.Project.Tracks[0].Kind == TrackKind.Effect && back.Project.Find(fx.Id)!.Props.Effect == Effects.Transition && back.Project.Find(fx.Id)!.Kind == ItemKind.Effect, "effects survive being saved and opened");
   var (pasted, ids) = pf.Paste(pf.Pick(new[] { fx.Id }), 5); Check(ids.Count == 1 && pasted.Find(ids[0])!.Kind == ItemKind.Effect && pasted.Tracks.Any(t => t.Kind == TrackKind.Effect && t.Items.Any(i => i.Id == ids[0])), "a pasted effect goes back on an effect lane"); }
 
 Console.WriteLine(fails == 0 ? "all passed" : $"{fails} FAILED"); return fails;

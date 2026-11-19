@@ -108,10 +108,12 @@ if (haveFfmpeg && File.Exists(clip))
     var baseP = Project.Empty((TrackKind.Effect, "Effects"), (TrackKind.Video, "V")).Add(1, cv0)!;
     byte[] Frame(string file, double at) { var q = new ProcessStartInfo("ffmpeg") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }; foreach (var a in new[] { "-loglevel", "error", "-ss", at.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", file, "-frames:v", "1", "-vf", "scale=160:90,format=gray", "-f", "rawvideo", "-" }) q.ArgumentList.Add(a); using var pr = Process.Start(q)!; var ms = new MemoryStream(); pr.StandardOutput.BaseStream.CopyTo(ms); pr.WaitForExit(); return ms.ToArray(); }
     int RunFx(Project pj, string outFile) { var g = ExportGraph.Build(pj, o with { Width = 640, Height = 360 }, _ => null, _ => null, _ => null); return Run3("ffmpeg", ExportGraph.Arguments(g, o, outFile, false).ToArray()); }
-    TimelineItem Fx(string type, double start, double len) => new(Guid.NewGuid(), ItemKind.Effect, "", 0, len, start, new ItemProps(Effect: type));
+    TimelineItem Fx(string type, double start, double len, ItemProps? pr = null) => new(Guid.NewGuid(), ItemKind.Effect, "", 0, len, start, pr ?? new ItemProps(Effect: type));
     int r0 = RunFx(baseP, plainOut);
-    int r1 = RunFx(baseP.Add(0, Fx(Effects.DipBlack, 1.5, 1.0))!, dipOut);
-    int r2 = RunFx(baseP.Add(0, Fx(Effects.DipWhite, 1.5, 1.0))!, whiteOut);
+    int r1 = RunFx(baseP.Add(0, Fx(Effects.Transition, 1.5, 1.0, new ItemProps(Effect: Effects.Transition, Color: "#000000")))!, dipOut);
+    int r2 = RunFx(baseP.Add(0, Fx(Effects.Transition, 1.5, 1.0, new ItemProps(Effect: Effects.Transition, Color: "#FFFFFF")))!, whiteOut);
+    int r4 = RunFx(baseP.Add(0, Fx(Effects.Transition, 1.0, 1.0, new ItemProps(Effect: Effects.Transition, Color: "#FF0000", Peak: 0.1)))!, Path.Combine(dir, "fx_flash.mp4"));
+    int r5 = RunFx(baseP.Add(0, Fx(Effects.Transition, 1.0, 2.0, new ItemProps(Effect: Effects.Transition, Color: "#000000", Hold: 0.6)))!, Path.Combine(dir, "fx_hold.mp4"));
     int r3 = RunFx(baseP.Add(0, Fx(Effects.Shake, 1.0, 0.6))!, shakeOut);
     double Mean(byte[] b) => b.Length == 0 ? -1 : b.Average(x => (double)x);
     Console.WriteLine($"      dip black: 1.0s={Mean(Frame(dipOut, 1.0)):0}  2.0s (middle)={Mean(Frame(dipOut, 2.0)):0}  3.0s={Mean(Frame(dipOut, 3.0)):0}  plain 2.0s={Mean(Frame(plainOut, 2.0)):0}");
@@ -120,6 +122,11 @@ if (haveFfmpeg && File.Exists(clip))
     double Diff(double at) { var x = Frame(plainOut, at); var y = Frame(shakeOut, at); return x.Length == 0 || x.Length != y.Length ? 999 : x.Zip(y, (m, n) => Math.Abs(m - n)).Average(); }
     Console.WriteLine($"      shake difference from the plain picture: 0.5s={Diff(0.5):0.0}  1.1s={Diff(1.1):0.0}  1.2s={Diff(1.2):0.0}  3.0s={Diff(3.0):0.0}");
     Check(r3 == 0 && Diff(1.1) > 8 && Diff(0.5) < 2 && Diff(3.0) < 2, "a shake moves the picture only while it lasts");
+    string flashF = Path.Combine(dir, "fx_flash.mp4"), holdF = Path.Combine(dir, "fx_hold.mp4");
+    var fl = Frame(flashF, 1.1); var pl = Frame(plainOut, 1.1);
+    Console.WriteLine($"      flash 1.1s={Mean(fl):0} plain={Mean(pl):0}   hold 1.5s={Mean(Frame(holdF, 1.5)):0} 2.0s={Mean(Frame(holdF, 2.0)):0} 2.9s={Mean(Frame(holdF, 2.9)):0}");
+    Check(r4 == 0 && Mean(fl) != Mean(pl) && Math.Abs(Mean(Frame(flashF, 1.1)) - Mean(Frame(plainOut, 1.1))) > 15 && Math.Abs(Mean(Frame(flashF, 0.5)) - Mean(Frame(plainOut, 0.5))) < 3, "a transition with an early peak is a flash: strong at the start of it and gone by the end");
+    Check(r5 == 0 && Mean(Frame(holdF, 1.6)) < 12 && Mean(Frame(holdF, 2.0)) < 12 && Mean(Frame(holdF, 2.9)) > 20 && Mean(Frame(holdF, 0.5)) > 40, "a transition with a hold stays dark for a while");
     Check(ExportGraph.ExtraFiltersFor(baseP.Add(0, Fx(Effects.Shake, 1.0, 0.6))!).Contains("split"), "a shake says it needs the split filter");
 }
 

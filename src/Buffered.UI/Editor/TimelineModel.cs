@@ -13,7 +13,7 @@ public enum TrackKind { Video, Audio, Text, Effect }
 /// </summary>
 public sealed record ItemProps(double Opacity = 1, double Volume = 1, double FadeIn = 0, double FadeOut = 0, double Speed = 1, string? Text = null,
     double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null, double Rotation = 0, double CropL = 0, double CropT = 0, double CropR = 0, double CropB = 0,
-    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null, double GifSpeed = 1, string? Effect = null, double Amount = 1)
+    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null, double GifSpeed = 1, string? Effect = null, double Amount = 1, double Peak = 0.5, double Hold = 0)
 {
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
     public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, KeyProp.Rotation => Rotation, _ => Scale };
@@ -156,23 +156,45 @@ public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double 
 }
 
 /// <param name="HeightScale">How tall the lane is drawn compared with the normal height (1 is normal); the user drags it.</param>
-/// <summary>The kinds of effect an effect-lane item can be (<see cref="ItemProps.Effect"/>).</summary>
+/// <summary>
+/// The kinds of effect an effect-lane item can be (<see cref="ItemProps.Effect"/>). A transition is one kind whose properties say what it does: the
+/// colour it goes to, where in its length it is strongest (<see cref="ItemProps.Peak"/>) and how long it stays at full strength (<see cref="ItemProps.Hold"/>).
+/// Dipping through black, through white, or a quick flash are all just different values of those.
+/// </summary>
 public static class Effects
 {
-    public const string DipBlack = "dip-black", DipWhite = "dip-white", Shake = "shake";
-    public static readonly (string Id, string Name)[] All = { (DipBlack, "Transition: dip to black"), (DipWhite, "Transition: dip to white"), (Shake, "Shake") };
-    public static string NameOf(string? id) => All.FirstOrDefault(e => e.Id == id).Name ?? "Effect";
-    public static bool IsTransition(string? id) => id is DipBlack or DipWhite;
+    public const string Transition = "transition", Shake = "shake";
+    public const string LegacyDipBlack = "dip-black", LegacyDipWhite = "dip-white";   // what an early build saved; read as a transition with that colour
+    public static readonly (string Id, string Name)[] All = { (Transition, "Transition"), (Shake, "Shake") };
+
+    public static string Canon(string? id) => id is LegacyDipBlack or LegacyDipWhite ? Transition : id ?? "";
+    public static bool IsTransition(string? id) => Canon(id) == Transition;
+    public static string NameOf(string? id) => All.FirstOrDefault(e => e.Id == Canon(id)).Name ?? "Effect";
+
+    /// <summary>The colour a transition goes to, as #RRGGBB.</summary>
+    public static string ColorOf(ItemProps p) => p.Effect == LegacyDipWhite ? "#FFFFFF" : p.Effect == LegacyDipBlack ? "#000000" : p.Color;
 
     /// <summary>
     /// How strongly the effect shows at a moment <paramref name="t"/> seconds into an item <paramref name="length"/> seconds long, from 0 to 1.
-    /// A transition rises to its peak in the middle (the cut) and falls again; a shake starts at full strength and dies away.
+    /// A transition rises to full strength (reaching it at the peak), stays there for the hold, and falls away again; a shake starts at full strength and dies away.
     /// </summary>
-    public static double Strength(string? id, double t, double length)
+    public static double Strength(ItemProps p, double t, double length)
     {
         if (length <= 0 || t < 0 || t > length) return 0;
         double u = t / length;
-        return IsTransition(id) ? 1 - Math.Abs(2 * u - 1) : 1 - u;
+        if (!IsTransition(p.Effect)) return 1 - u;
+        var (attack, hold, release) = Shape(p);
+        if (u < attack) return attack <= 0 ? 1 : u / attack;
+        if (u <= attack + hold) return 1;
+        return release <= 0 ? 0 : Math.Max(0, 1 - (u - attack - hold) / release);
+    }
+
+    /// <summary>The three parts of a transition as shares of its length: rising, holding at full strength, and falling. They add up to 1.</summary>
+    public static (double Attack, double Hold, double Release) Shape(ItemProps p)
+    {
+        double hold = Math.Clamp(p.Hold, 0, 0.95), peak = Math.Clamp(p.Peak, 0, 1);
+        double attack = peak * (1 - hold);
+        return (attack, hold, 1 - hold - attack);
     }
 }
 

@@ -600,7 +600,6 @@ public partial class AdvancedEditor : UserControl
         double at = CutTime() ?? _t;
         var menu = new ContextMenu { PlacementTarget = TransitionButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Top };
         void Add(string text, double seconds) { var m = new MenuItem { Header = text }; m.Click += (_, _) => { _h.Apply(_h.Current.TransitionAt(at, seconds)); AfterEdit(); }; menu.Items.Add(m); }
-        void Dip(string text, string type, double seconds) { var m = new MenuItem { Header = text }; m.Click += (_, _) => AddTransition(type, seconds); menu.Items.Add(m); }
         void Dissolve(string text, double seconds)
         {
             var m = new MenuItem { Header = text };
@@ -612,11 +611,12 @@ public partial class AdvancedEditor : UserControl
             };
             menu.Items.Add(m);
         }
-        Dip("Dip to black, quick (0.5 s)", Effects.DipBlack, 0.5);
-        Dip("Dip to black, smooth (1 s)", Effects.DipBlack, 1.0);
-        Dip("Dip to black, slow (2 s)", Effects.DipBlack, 2.0);
-        Dip("Dip to white, quick (0.5 s)", Effects.DipWhite, 0.5);
-        Dip("Dip to white, smooth (1 s)", Effects.DipWhite, 1.0);
+        foreach (var preset in TransitionPresets)
+        {
+            var m = new MenuItem { Header = $"{preset.Name} ({preset.Seconds:0.#} s)" };
+            var chosen = preset; m.Click += (_, _) => AddTransition(chosen);
+            menu.Items.Add(m);
+        }
         menu.Items.Add(new Separator());
         Dissolve("Cross-dissolve (moves the next clip earlier), quick (0.5 s)", 0.5);
         Dissolve("Cross-dissolve (moves the next clip earlier), smooth (1 s)", 1.0);

@@ -28,14 +28,15 @@ public partial class AdvancedEditor
     /// <summary>Gives the clips in the library, for the media panel.</summary>
     public Func<IEnumerable<ClipItem>>? Library { get; set; }
 
-    private readonly ObservableCollection<MediaEntry> _entries = new();
-    private readonly List<MediaEntry> _imported = new();
+    private readonly ObservableCollection<MediaEntry> _entries = new();    // the recordings in the library
+    private readonly ObservableCollection<MediaEntry> _imported = new();   // the media pool: files brought in
     private static readonly string[] ImageExt = { ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif" };
     private static readonly string[] AudioExt = { ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".opus" };
 
     private void InitMedia()
     {
         MediaList.ItemsSource = _entries;
+        _imported.CollectionChanged += (_, _) => ShowPoolHint();
         Tl.MediaDropped += (data, lane, time) => { if (data is MediaEntry e) _ = AddMediaAsync(e, time, lane); };
         foreach (var hex in new[] { "#FFFFFF", "#111111", "#FFD84D", "#FF6B6B", "#6BCB77", "#4D9DFF", "#C77DFF" })
         {
@@ -84,7 +85,30 @@ public partial class AdvancedEditor
         _entries.Clear();
         foreach (var c in (Library?.Invoke() ?? Enumerable.Empty<ClipItem>()).OrderByDescending(c => c.When))
             _entries.Add(new MediaEntry { Path = c.Path, Label = c.Label, Kind = ItemKind.Video, Detail = c.Subtitle, Thumb = c.Thumb, Seconds = ParseClock(c.Duration) });
-        foreach (var e in _imported) _entries.Add(e);
+    }
+
+    /// <summary>Clips and the media pool are two lists: the recordings from the library, and the files that were brought in.</summary>
+    private void MediaView_Checked(object sender, RoutedEventArgs e)
+    {
+        if (MediaList is null || ViewPool is null) return;
+        bool pool = ViewPool.IsChecked == true;
+        MediaList.ItemsSource = pool ? _imported : _entries;
+        PoolHeader.Visibility = pool ? Visibility.Visible : Visibility.Collapsed;
+        ShowPoolHint();
+    }
+
+    private void ShowPoolHint() { if (PoolEmpty is not null) PoolEmpty.Visibility = _imported.Count == 0 ? Visibility.Visible : Visibility.Collapsed; }
+
+    /// <summary>Right click on something in the media pool: take it out of the pool (it stays on the timeline if it is already there).</summary>
+    private void MediaList_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ViewPool.IsChecked != true) return;
+        if ((ItemsControl.ContainerFromElement(MediaList, (DependencyObject)e.OriginalSource) as ListBoxItem)?.DataContext is not MediaEntry entry) return;
+        var menu = new ContextMenu();
+        var add = new MenuItem { Header = "Add to the timeline at the playhead" }; add.Click += (_, _) => _ = AddMediaAsync(entry, _t, -1);
+        var remove = new MenuItem { Header = "Take out of the media pool" }; remove.Click += (_, _) => _imported.Remove(entry);
+        menu.Items.Add(add); menu.Items.Add(remove);
+        menu.IsOpen = true; e.Handled = true;
     }
 
     /// <summary>"5:01" or "1:02:03" to seconds; 5 if it is not known yet.</summary>
@@ -145,6 +169,7 @@ public partial class AdvancedEditor
     public void ImportFiles(IEnumerable<string> files)
     {
         TabMedia.IsChecked = true;
+        ViewPool.IsChecked = true;   // what is brought in goes to the media pool
         files = files.ToList();
         foreach (var srt in files.Where(f => System.IO.Path.GetExtension(f).Equals(".srt", StringComparison.OrdinalIgnoreCase))) ImportSubtitles(srt);
         foreach (var f in files.Where(f => !System.IO.Path.GetExtension(f).Equals(".srt", StringComparison.OrdinalIgnoreCase)).Where(f => IsMediaFile(f) && !_imported.Any(i => string.Equals(i.Path, f, StringComparison.OrdinalIgnoreCase))))
@@ -158,7 +183,7 @@ public partial class AdvancedEditor
                 catch (Exception ex) when (ex is IOException or NotSupportedException) { }
             }
             var entry = new MediaEntry { Path = f, Label = System.IO.Path.GetFileNameWithoutExtension(f), Kind = kind, Thumb = thumb, Detail = kind == ItemKind.Image ? "Picture" : kind == ItemKind.Audio ? "Sound" : "Video" };
-            _imported.Add(entry); _entries.Add(entry);
+            _imported.Add(entry);
         }
     }
 

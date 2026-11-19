@@ -69,10 +69,17 @@
                         <RadioButton x:Name="TabEffects" Content="Effects" GroupName="PanelTab" Style="{StaticResource SegButton}" Height="30" Checked="Tab_Checked"/>
                     </UniformGrid>
                     <Grid x:Name="MediaTab" Grid.Row="1">
-                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                        <Button Content="Import files…" HorizontalAlignment="Stretch" Height="30" Margin="0,0,0,8" Click="Import_Click" ToolTip="Videos, pictures or sound files from your computer"/>
-                        <ListBox x:Name="MediaList" Grid.Row="1" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 PreviewMouseMove="MediaList_MouseMove" PreviewMouseLeftButtonDown="MediaList_MouseDown" MouseDoubleClick="MediaList_DoubleClick">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <UniformGrid Columns="2" Margin="0,0,0,8">
+                            <RadioButton x:Name="ViewClips" Content="Clips" GroupName="MediaView" IsChecked="True" Style="{StaticResource SegButton}" Height="26" FontSize="12" Checked="MediaView_Checked" ToolTip="Your recordings from the library"/>
+                            <RadioButton x:Name="ViewPool" Content="Media pool" GroupName="MediaView" Style="{StaticResource SegButton}" Height="26" FontSize="12" Checked="MediaView_Checked" ToolTip="Files you brought in: videos, pictures, GIFs and sounds"/>
+                        </UniformGrid>
+                        <StackPanel x:Name="PoolHeader" Grid.Row="1" Visibility="Collapsed">
+                            <Button Content="Import files…" HorizontalAlignment="Stretch" Height="30" Margin="0,0,0,8" Click="Import_Click" ToolTip="Videos, pictures, GIFs, sound files or subtitles (.srt) from your computer. You can also drop files on the window."/>
+                            <TextBlock x:Name="PoolEmpty" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,8" Text="Nothing here yet. Import files or drop them on the window and they stay in this pool while you work. Right-click one to take it out."/>
+                        </StackPanel>
+                        <ListBox x:Name="MediaList" Grid.Row="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewMouseMove="MediaList_MouseMove" PreviewMouseLeftButtonDown="MediaList_MouseDown" MouseDoubleClick="MediaList_DoubleClick" PreviewMouseRightButtonUp="MediaList_RightClick">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="0,2">
@@ -99,8 +106,7 @@
                         <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Text goes on its own lane at the playhead. Click it on the timeline to change the words, size, colour and where it sits; drag it in the picture to move it."/>
                     </StackPanel>
                     <StackPanel x:Name="EffectsTab" Grid.Row="1" Visibility="Collapsed">
-                        <Button Content="Transition: dip to black" Tag="dip-black" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,8" Click="EffectAdd_Click" ToolTip="Fades the picture through black and back, over the cut"/>
-                        <Button Content="Transition: dip to white" Tag="dip-white" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,8" Click="EffectAdd_Click" ToolTip="A flash through white, over the cut"/>
+                        <Button Content="Transition" Tag="transition" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,8" Click="EffectAdd_Click" ToolTip="Goes to a colour and back, over the cut. Its properties (colour, where it peaks, how long it holds) make it a dip, a flash and more"/>
                         <Button Content="Shake" Tag="shake" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,10" Click="EffectAdd_Click" ToolTip="Rattles the whole picture, then settles (X)"/>
                         <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Effects go on their own lane and act on the whole picture beneath them. A transition is put on the cut that is selected or nearest the playhead, a shake at the playhead. Drag an effect or pull its edges to move it or change how long it lasts; click it to change its type and strength. Right-click the lane names to add an effect lane."/>
                     </StackPanel>
@@ -128,6 +134,14 @@
                         <StackPanel x:Name="EffectPanel" Visibility="Collapsed">
                             <TextBlock Text="Effect" Margin="0,0,0,4"/>
                             <ComboBox x:Name="EffectBox" Margin="0,0,0,10" SelectionChanged="EffectType_Changed"/>
+                            <StackPanel x:Name="TransitionProps">
+                                <TextBlock Text="Colour it goes to" Margin="0,0,0,6"/>
+                                <WrapPanel x:Name="EffectSwatches" Margin="0,0,0,10"/>
+                                <DockPanel Margin="0,0,0,10"><TextBlock x:Name="PeakValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Strongest at"/></DockPanel>
+                                <Slider x:Name="PeakSlider" Minimum="0" Maximum="100" Margin="0,-6,0,10" ValueChanged="EffectShape_Changed" ToolTip="Where in its length it is at full strength: in the middle for a dip over a cut, near the start for a flash"/>
+                                <DockPanel Margin="0,0,0,10"><TextBlock x:Name="HoldValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Stays at full for"/></DockPanel>
+                                <Slider x:Name="HoldSlider" Minimum="0" Maximum="90" Margin="0,-6,0,10" ValueChanged="EffectShape_Changed" ToolTip="How much of its length it holds at full strength before letting go"/>
+                            </StackPanel>
                             <DockPanel x:Name="EffectAmountRow" Margin="0,0,0,10"><TextBlock x:Name="EffectAmountValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Strength"/></DockPanel>
                             <Slider x:Name="EffectAmountSlider" Minimum="25" Maximum="300" Margin="0,-6,0,10" ValueChanged="EffectAmount_Changed"/>
                         </StackPanel>

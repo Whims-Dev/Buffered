@@ -88,9 +88,14 @@ public static class ExportGraph
             string tag = $"fx{layer++}";
             if (Effects.IsTransition(fx.Props.Effect))
             {
-                // a sheet of black (or white) that fades in to the middle of the effect and out again, laid over the picture
-                string c = fx.Props.Effect == Effects.DipWhite ? "white" : "black";
-                graph.Append($"color=c={c}:s={o.Width}x{o.Height}:r={o.Fps}:d={N(d)},format=rgba,fade=t=in:st=0:d={N(d / 2)}:alpha=1,fade=t=out:st={N(d / 2)}:d={N(d / 2)}:alpha=1,setpts=PTS+{N(s0)}/TB[{tag}];");
+                // a sheet of colour that fades in, holds and fades out again over the picture; the effect's properties say which colour and how it is shaped
+                var (attack, hold, release) = Effects.Shape(fx.Props);
+                string hex = Effects.ColorOf(fx.Props).TrimStart('#');
+                string c = hex.Length == 6 && hex.All(Uri.IsHexDigit) ? "0x" + hex : "black";
+                graph.Append($"color=c={c}:s={o.Width}x{o.Height}:r={o.Fps}:d={N(d)},format=rgba");
+                if (attack * d > 0.001) graph.Append($",fade=t=in:st=0:d={N(attack * d)}:alpha=1");
+                if (release * d > 0.001) graph.Append($",fade=t=out:st={N((attack + hold) * d)}:d={N(release * d)}:alpha=1");
+                graph.Append($",setpts=PTS+{N(s0)}/TB[{tag}];");
                 graph.Append($"[{last}][{tag}]overlay=eof_action=pass:format=auto[o{layer}];");
             }
             else
