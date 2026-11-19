@@ -235,7 +235,7 @@ public sealed class TimelineView : FrameworkElement
                     var vt = Fmt($"{it.Props.ValueAt(KeyProp.Volume, _playhead - it.Start) * 100:0}%", 10 * F, Brushes.White);
                     dc.DrawText(vt, new Point(kx + 9 * F, ky - vt.Height / 2));
                 }
-                if (it.Id == _selected && !tr.Locked)   // fade handles: drag them along the top edge
+                if (it.Id == _selected && !tr.Locked && it.Kind != ItemKind.Effect)   // fade handles (an effect has its own shape, set in its properties): drag them along the top edge
                 {
                     double hr = 4.5 * F, hy = top + 3 + hr + 1;
                     var handle = new SolidColorBrush(Color.FromArgb(235, 255, 255, 255));
@@ -526,7 +526,7 @@ public sealed class TimelineView : FrameworkElement
     /// <summary>The fade handle of the selected item under the mouse, if any.</summary>
     private Drag? FadeHandleAt(Point p)
     {
-        if (_selected is not { } id || _project.Find(id) is not { } it) return null;
+        if (_selected is not { } id || _project.Find(id) is not { } it || it.Kind == ItemKind.Effect) return null;
         int lane = _project.Tracks.FindIndex(t => t.Items.Any(i => i.Id == id));
         if (lane < 0 || _project.Tracks[lane].Locked) return null;
         double hr = 4.5 * F, hy = LaneTop(lane) + 3 + hr + 1, grab = hr + 3;
