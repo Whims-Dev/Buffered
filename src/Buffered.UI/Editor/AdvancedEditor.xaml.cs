@@ -59,6 +59,7 @@ public partial class AdvancedEditor : UserControl
         InitProject();
         InitMore();
         InitEffects();
+        InitScrub();
         Tl.Changing += p => { Tl.Project = p; PushLanesOf(p); Sync(false); };
         Tl.Committed += p => { _h.Apply(Magnetic(p)); AfterEdit(); };
         Tl.CutMade += p => { _h.Apply(p); AfterEdit(); };
@@ -220,7 +221,7 @@ public partial class AdvancedEditor : UserControl
     {
         _timer.Stop(); _playing = false; _videoPlaying = false; _clock.Reset();
         try { Video.Stop(); Video.Close(); Video2.Stop(); Video2.Close(); } catch (InvalidOperationException) { }
-        _src = null; _src2 = null; _v2Playing = false; _activeId = null; _waiting = false; _seekHold = false; _openId++; _savedProject = null; _hasSession = false;
+        _src = null; _src2 = null; _v2Playing = false; _activeId = null; _waiting = false; _seekHold = false; CancelScrub(); _openId++; _savedProject = null; _hasSession = false;
         _mixer.Dispose();
         foreach (var f in _pcmFiles) Media.TryDeleteFile(f);
         _pcmFiles.Clear();
@@ -240,7 +241,7 @@ public partial class AdvancedEditor : UserControl
         if (!_playing && _t >= total - 0.02) SetTime(0, true);
         _playing = !_playing;
         PlayButton.Content = _playing ? "Pause" : "Play";
-        _baseT = _t; _clock.Restart(); _waiting = false; _seekHold = false;
+        _baseT = _t; _clock.Restart(); _waiting = false; _seekHold = false; CancelScrub();
         if (_playing) { _timer.Start(); _mixer.Play(_t); }
         else { _timer.Stop(); _clock.Stop(); _mixer.Pause(); }
         Sync(false);
@@ -307,7 +308,7 @@ public partial class AdvancedEditor : UserControl
         if (active is null)
         {
             if (_videoPlaying) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; }
-            Video.Opacity = 0; EmptyText.Visibility = Visibility.Visible; _activeId = null;
+            CancelScrub(); Video.Opacity = 0; EmptyText.Visibility = Visibility.Visible; _activeId = null;
             return;
         }
         EmptyText.Visibility = Visibility.Collapsed;
@@ -317,6 +318,7 @@ public partial class AdvancedEditor : UserControl
 
         if (_src != active.Source)
         {
+            CancelScrub();
             _src = active.Source; _pendingPos = expected; _videoPlaying = false;
             Video.Source = new Uri(ScrubCache.Existing(active.Source) ?? active.Source);
             try { Video.Pause(); } catch (InvalidOperationException) { }   // in manual mode the file is only opened once the player is told to do something   // the smooth copy when there is one: the same picture, quick to jump around in
@@ -331,13 +333,16 @@ public partial class AdvancedEditor : UserControl
                 // a jump while playing: the picture is paused first, so it keeps showing what it had and then goes straight to the new picture,
                 // instead of playing through every picture on the way to it (which flashed old pictures and lagged)
                 // (the same when scrubbing while paused: the picture used to be told to jump while it was still playing from the last jump, which showed black between jumps)
-                if (seek && _videoPlaying) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; _seekHold = _playing; }
-                try { Video.Position = TimeSpan.FromSeconds(expected); } catch (InvalidOperationException) { }
-                if (_playing) BeginWait(expected);
+                if (seek && !_playing) ScrubTo(expected);   // a jump while paused: see AdvancedEditor.Scrub.cs
+                else
+                {
+                    if (seek && _videoPlaying) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; _seekHold = _playing; }
+                    try { Video.Position = TimeSpan.FromSeconds(expected); } catch (InvalidOperationException) { }
+                    if (_playing) BeginWait(expected);
+                }
             }
             if (_playing && !_videoPlaying && !_waiting) { Video.Play(); _videoPlaying = true; }
-            else if (!_playing && seek && !_videoPlaying) { Video.Play(); _videoPlaying = true; _frameTimer.Stop(); _frameTimer.Start(); }
-            else if (!_playing && _videoPlaying && !_frameTimer.IsEnabled) { Video.Pause(); _videoPlaying = false; }
+            else if (!_playing && _videoPlaying && !_frameTimer.IsEnabled && !_scrubBusy) { Video.Pause(); _videoPlaying = false; }
         }
 
         // fades: the item's own, then its volume. A picture whose sound lanes were all deleted is played silent.
@@ -370,6 +375,7 @@ public partial class AdvancedEditor : UserControl
         player.RenderTransform = Math.Abs(s - 1) < 0.001 && Math.Abs(px - 0.5) < 0.001 && Math.Abs(py - 0.5) < 0.001 && Math.Abs(turn) < 0.01
             ? Transform.Identity
             : new TransformGroup { Children = { new ScaleTransform(s, s), new RotateTransform(turn), new TranslateTransform((px - 0.5) * Stage.Width, (py - 0.5) * Stage.Height) } };
+        if (player == Video && SeekCover.Visibility == Visibility.Visible) MirrorCover();
     }
 
     private void FitVideo_Click(object sender, RoutedEventArgs e) => ApplyToSelection(o => o with { Scale = 1, PosX = 0.5, PosY = 0.5 }, "fit");

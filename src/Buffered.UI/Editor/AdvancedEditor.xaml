@@ -123,6 +123,7 @@
                     <MediaElement x:Name="Video2" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform" IsMuted="True" Opacity="0" MediaOpened="Video2_Opened"/>
                     <MediaElement x:Name="Video" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform"
                                   MediaOpened="Video_Opened" MediaFailed="Video_Failed"/>
+                    <Image x:Name="SeekCover" Visibility="Collapsed" Stretch="Fill" IsHitTestVisible="False"/>
                     <TextBlock x:Name="EmptyText" Text="Nothing here at the playhead" Foreground="#99FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
                     <Canvas x:Name="Overlay" ClipToBounds="True" MouseMove="Overlay_MouseMove" MouseLeftButtonUp="Overlay_MouseUp"/>
                     </Grid>
