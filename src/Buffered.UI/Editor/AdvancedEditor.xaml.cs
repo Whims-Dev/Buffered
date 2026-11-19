@@ -30,6 +30,7 @@ public partial class AdvancedEditor : UserControl
     private double _pendingPos, _lastSpeed = 1;
     private TimelineMixer _mixer = new();
     private readonly List<string> _pcmFiles = new();
+    private bool _seekHold;                // the picture was paused for a jump of the playhead: it shows the last picture until the new one is ready
     private bool _waiting;                 // playing, but the clocks are held until the picture has caught up
     private double _waitFor;               // where the picture must be before they go on
     private long _waitSince;
@@ -219,7 +220,7 @@ public partial class AdvancedEditor : UserControl
     {
         _timer.Stop(); _playing = false; _videoPlaying = false; _clock.Reset();
         try { Video.Stop(); Video.Close(); Video2.Stop(); Video2.Close(); } catch (InvalidOperationException) { }
-        _src = null; _src2 = null; _v2Playing = false; _activeId = null; _waiting = false; _openId++; _savedProject = null; _hasSession = false;
+        _src = null; _src2 = null; _v2Playing = false; _activeId = null; _waiting = false; _seekHold = false; _openId++; _savedProject = null; _hasSession = false;
         _mixer.Dispose();
         foreach (var f in _pcmFiles) Media.TryDeleteFile(f);
         _pcmFiles.Clear();
@@ -239,7 +240,7 @@ public partial class AdvancedEditor : UserControl
         if (!_playing && _t >= total - 0.02) SetTime(0, true);
         _playing = !_playing;
         PlayButton.Content = _playing ? "Pause" : "Play";
-        _baseT = _t; _clock.Restart(); _waiting = false;
+        _baseT = _t; _clock.Restart(); _waiting = false; _seekHold = false;
         if (_playing) { _timer.Start(); _mixer.Play(_t); }
         else { _timer.Stop(); _clock.Stop(); _mixer.Pause(); }
         Sync(false);
@@ -261,7 +262,8 @@ public partial class AdvancedEditor : UserControl
         {
             // the picture is still getting there: the playhead and the sound stand still until it has, so nothing runs ahead of what is shown
             double vp = Video.Position.TotalSeconds;
-            if (Math.Abs(vp - _waitFor) < 0.3 || Stopwatch.GetElapsedTime(_waitSince).TotalSeconds > 5) EndWait();
+            bool settled = !_seekHold || Stopwatch.GetElapsedTime(_waitSince).TotalMilliseconds > 180;   // a jump gets a moment to show its first picture
+            if ((Math.Abs(vp - _waitFor) < 0.3 && settled) || Stopwatch.GetElapsedTime(_waitSince).TotalSeconds > 5) EndWait();
             else return;
         }
         _t = _mixer.IsPlaying && !_mixer.Failed ? _mixer.Position : _baseT + _clock.Elapsed.TotalSeconds;
@@ -326,10 +328,13 @@ public partial class AdvancedEditor : UserControl
             double drift = Math.Abs(Video.Position.TotalSeconds - expected);
             if (seek || (_playing && !_waiting && drift > 0.35))
             {
+                // a jump while playing: the picture is paused first, so it keeps showing what it had and then goes straight to the new picture,
+                // instead of playing through every picture on the way to it (which flashed old pictures and lagged)
+                if (_playing && seek) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; _seekHold = true; }
                 try { Video.Position = TimeSpan.FromSeconds(expected); } catch (InvalidOperationException) { }
                 if (_playing) BeginWait(expected);
             }
-            if (_playing && !_videoPlaying) { Video.Play(); _videoPlaying = true; }
+            if (_playing && !_videoPlaying && !_waiting) { Video.Play(); _videoPlaying = true; }
             else if (!_playing && seek && !_videoPlaying) { Video.Play(); _videoPlaying = true; _frameTimer.Stop(); _frameTimer.Start(); }
             else if (!_playing && _videoPlaying && !_frameTimer.IsEnabled) { Video.Pause(); _videoPlaying = false; }
         }
@@ -453,7 +458,7 @@ public partial class AdvancedEditor : UserControl
 
     private void EndWait()
     {
-        _waiting = false;
+        _waiting = false; _seekHold = false;
         _baseT = _t; _clock.Restart(); _mixer.Play(_t);
         StatusText.Text = Hint;
     }
