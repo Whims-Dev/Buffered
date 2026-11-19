@@ -101,6 +101,26 @@ if (haveFfmpeg && File.Exists(clip))
     int early = Lum(shortOut, 1.0), late = Lum(shortOut, 2.7);
     Console.WriteLine($"      short picture: 1.0s={early}  2.7s={late}");
     Check(src == 0 && early > 200 && late > 200, "when a clip's picture ends before its sound, the last picture is held (no black at the end)");
+    // effect lanes: a dip goes dark in the middle of the cut, a shake moves the picture only while it lasts
+    string chart = Path.Combine(dir, "chart.mp4"), plainOut = Path.Combine(dir, "fx_plain.mp4"), dipOut = Path.Combine(dir, "fx_dip.mp4"), whiteOut = Path.Combine(dir, "fx_white.mp4"), shakeOut = Path.Combine(dir, "fx_shake.mp4");
+    Run3("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", chart);
+    var cv0 = new TimelineItem(Guid.NewGuid(), ItemKind.Video, chart, 0, 4, 0, new ItemProps());
+    var baseP = Project.Empty((TrackKind.Effect, "Effects"), (TrackKind.Video, "V")).Add(1, cv0)!;
+    byte[] Frame(string file, double at) { var q = new ProcessStartInfo("ffmpeg") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }; foreach (var a in new[] { "-loglevel", "error", "-ss", at.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", file, "-frames:v", "1", "-vf", "scale=160:90,format=gray", "-f", "rawvideo", "-" }) q.ArgumentList.Add(a); using var pr = Process.Start(q)!; var ms = new MemoryStream(); pr.StandardOutput.BaseStream.CopyTo(ms); pr.WaitForExit(); return ms.ToArray(); }
+    int RunFx(Project pj, string outFile) { var g = ExportGraph.Build(pj, o with { Width = 640, Height = 360 }, _ => null, _ => null, _ => null); return Run3("ffmpeg", ExportGraph.Arguments(g, o, outFile, false).ToArray()); }
+    TimelineItem Fx(string type, double start, double len) => new(Guid.NewGuid(), ItemKind.Effect, "", 0, len, start, new ItemProps(Effect: type));
+    int r0 = RunFx(baseP, plainOut);
+    int r1 = RunFx(baseP.Add(0, Fx(Effects.DipBlack, 1.5, 1.0))!, dipOut);
+    int r2 = RunFx(baseP.Add(0, Fx(Effects.DipWhite, 1.5, 1.0))!, whiteOut);
+    int r3 = RunFx(baseP.Add(0, Fx(Effects.Shake, 1.0, 0.6))!, shakeOut);
+    double Mean(byte[] b) => b.Length == 0 ? -1 : b.Average(x => (double)x);
+    Console.WriteLine($"      dip black: 1.0s={Mean(Frame(dipOut, 1.0)):0}  2.0s (middle)={Mean(Frame(dipOut, 2.0)):0}  3.0s={Mean(Frame(dipOut, 3.0)):0}  plain 2.0s={Mean(Frame(plainOut, 2.0)):0}");
+    Check(r0 == 0 && r1 == 0 && Mean(Frame(dipOut, 2.0)) < 12 && Mean(Frame(dipOut, 1.0)) > 40 && Mean(Frame(dipOut, 3.0)) > 40 && Mean(Frame(dipOut, 1.75)) < Mean(Frame(plainOut, 1.75)) - 10, "a transition on an effect lane goes dark in the middle of the cut and is clear outside it");
+    Check(r2 == 0 && Mean(Frame(whiteOut, 2.0)) > 240 && Mean(Frame(whiteOut, 1.0)) < 200, "a dip to white flashes white in the middle");
+    double Diff(double at) { var x = Frame(plainOut, at); var y = Frame(shakeOut, at); return x.Length == 0 || x.Length != y.Length ? 999 : x.Zip(y, (m, n) => Math.Abs(m - n)).Average(); }
+    Console.WriteLine($"      shake difference from the plain picture: 0.5s={Diff(0.5):0.0}  1.1s={Diff(1.1):0.0}  1.2s={Diff(1.2):0.0}  3.0s={Diff(3.0):0.0}");
+    Check(r3 == 0 && Diff(1.1) > 8 && Diff(0.5) < 2 && Diff(3.0) < 2, "a shake moves the picture only while it lasts");
+    Check(ExportGraph.ExtraFiltersFor(baseP.Add(0, Fx(Effects.Shake, 1.0, 0.6))!).Contains("split"), "a shake says it needs the split filter");
 }
 
 else Console.WriteLine("skip  (no ffmpeg or sample clip here: the run test was not done)");

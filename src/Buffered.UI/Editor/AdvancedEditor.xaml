@@ -63,9 +63,10 @@
             <Border Style="{StaticResource Card}" Padding="10" Margin="0,0,12,0">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <UniformGrid Columns="2" Margin="0,0,0,10">
+                    <UniformGrid Columns="3" Margin="0,0,0,10">
                         <RadioButton x:Name="TabMedia" Content="Media" GroupName="PanelTab" IsChecked="True" Style="{StaticResource SegButton}" Height="30" Checked="Tab_Checked"/>
                         <RadioButton x:Name="TabText" Content="Text" GroupName="PanelTab" Style="{StaticResource SegButton}" Height="30" Checked="Tab_Checked"/>
+                        <RadioButton x:Name="TabEffects" Content="Effects" GroupName="PanelTab" Style="{StaticResource SegButton}" Height="30" Checked="Tab_Checked"/>
                     </UniformGrid>
                     <Grid x:Name="MediaTab" Grid.Row="1">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -97,16 +98,25 @@
                         <Button Content="Add body text" HorizontalAlignment="Stretch" Height="30" Margin="0,0,0,10" Click="AddBody_Click" FontSize="12"/>
                         <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Text goes on its own lane at the playhead. Click it on the timeline to change the words, size, colour and where it sits; drag it in the picture to move it."/>
                     </StackPanel>
+                    <StackPanel x:Name="EffectsTab" Grid.Row="1" Visibility="Collapsed">
+                        <Button Content="Transition: dip to black" Tag="dip-black" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,8" Click="EffectAdd_Click" ToolTip="Fades the picture through black and back, over the cut"/>
+                        <Button Content="Transition: dip to white" Tag="dip-white" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,8" Click="EffectAdd_Click" ToolTip="A flash through white, over the cut"/>
+                        <Button Content="Shake" Tag="shake" HorizontalAlignment="Stretch" Height="34" Margin="0,0,0,10" Click="EffectAdd_Click" ToolTip="Rattles the whole picture, then settles (X)"/>
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Effects go on their own lane and act on the whole picture beneath them. A transition is put on the cut that is selected or nearest the playhead, a shake at the playhead. Drag an effect or pull its edges to move it or change how long it lasts; click it to change its type and strength. Right-click the lane names to add an effect lane."/>
+                    </StackPanel>
                 </Grid>
             </Border>
 
             <Border Grid.Column="1" Background="Black" CornerRadius="6" ClipToBounds="True" SizeChanged="Stage_SizeChanged" x:Name="StageHost">
                 <Grid x:Name="Stage" HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Height="225" ClipToBounds="True">
+                    <Grid x:Name="StageContent" RenderTransformOrigin="0.5,0.5">
                     <MediaElement x:Name="Video2" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform" IsMuted="True" Opacity="0" MediaOpened="Video2_Opened"/>
                     <MediaElement x:Name="Video" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" Stretch="Uniform"
                                   MediaOpened="Video_Opened" MediaFailed="Video_Failed"/>
                     <TextBlock x:Name="EmptyText" Text="Nothing here at the playhead" Foreground="#99FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
                     <Canvas x:Name="Overlay" ClipToBounds="True" MouseMove="Overlay_MouseMove" MouseLeftButtonUp="Overlay_MouseUp"/>
+                    </Grid>
+                    <Rectangle x:Name="EffectCover" Fill="Black" Opacity="0" IsHitTestVisible="False"/>
                 </Grid>
             </Border>
 
@@ -115,14 +125,20 @@
                     <TextBlock x:Name="PropsTitle" Text="Nothing selected" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
                     <TextBlock x:Name="PropsHint" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" Text="Click an item on the timeline to change its opacity, volume and fades."/>
                     <StackPanel x:Name="PropsBody" Visibility="Collapsed" Margin="12,10,10,4">
+                        <StackPanel x:Name="EffectPanel" Visibility="Collapsed">
+                            <TextBlock Text="Effect" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="EffectBox" Margin="0,0,0,10" SelectionChanged="EffectType_Changed"/>
+                            <DockPanel x:Name="EffectAmountRow" Margin="0,0,0,10"><TextBlock x:Name="EffectAmountValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Strength"/></DockPanel>
+                            <Slider x:Name="EffectAmountSlider" Minimum="25" Maximum="300" Margin="0,-6,0,10" ValueChanged="EffectAmount_Changed"/>
+                        </StackPanel>
                         <DockPanel x:Name="OpacityRow" Margin="0,0,0,10"><Button x:Name="KeyOpacity" Tag="Opacity" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="OpacityValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Opacity"/></DockPanel>
                         <Slider x:Name="OpacitySlider" Minimum="0" Maximum="100" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel x:Name="VolumeRow" Margin="0,0,0,10"><Button x:Name="KeyVolume" Tag="Volume" Style="{StaticResource KeyDiamond}" DockPanel.Dock="Right" Click="Key_Click" MouseRightButtonUp="Key_RightClick" ToolTip="Animate: add or remove a keyframe at the playhead (right-click: remove the animation)"/><TextBlock x:Name="VolumeValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Volume"/></DockPanel>
                         <Button x:Name="BeatButton" Content="Mark the beats" Height="30" Margin="0,0,0,12" HorizontalAlignment="Left" Padding="12,0" Click="Beats_Click" ToolTip="Drops a marker on every beat of this sound. Clips and effects snap to markers"/>
                         <Slider x:Name="VolumeSlider" Minimum="0" Maximum="200" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                        <DockPanel Margin="0,0,0,10"><TextBlock x:Name="FadeInValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade in"/></DockPanel>
+                        <DockPanel x:Name="FadeInRow" Margin="0,0,0,10"><TextBlock x:Name="FadeInValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade in"/></DockPanel>
                         <Slider x:Name="FadeInSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
-                        <DockPanel Margin="0,0,0,10"><TextBlock x:Name="FadeOutValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade out"/></DockPanel>
+                        <DockPanel x:Name="FadeOutRow" Margin="0,0,0,10"><TextBlock x:Name="FadeOutValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Fade out"/></DockPanel>
                         <Slider x:Name="FadeOutSlider" Minimum="0" Maximum="5" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>
                         <DockPanel x:Name="SpeedRow" Margin="0,0,0,10"><TextBlock x:Name="SpeedValue" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock Text="Speed"/></DockPanel>
                         <Slider x:Name="SpeedSlider" Minimum="0.25" Maximum="4" Margin="0,-6,0,10" ValueChanged="Prop_Changed"/>

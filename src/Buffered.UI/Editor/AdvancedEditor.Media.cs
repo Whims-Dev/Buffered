@@ -101,7 +101,8 @@ public partial class AdvancedEditor
         if (MediaTab is null) return;
         bool media = TabMedia.IsChecked == true;
         MediaTab.Visibility = media ? Visibility.Visible : Visibility.Collapsed;
-        TextTab.Visibility = media ? Visibility.Collapsed : Visibility.Visible;
+        TextTab.Visibility = TabText.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        EffectsTab.Visibility = TabEffects.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Import_Click(object sender, RoutedEventArgs e)
@@ -452,6 +453,7 @@ public partial class AdvancedEditor
             Canvas.SetTop(box, posY * H - box.DesiredSize.Height / 2);
             if (it.Id == _selected) PlaceScaleHandle(it, box);
         }
+        ApplyEffects(p, t);
         if (_scaleHandle is not null && (_selected is not { } sid || active.All(a => a.Id != sid))) { Overlay.Children.Remove(_scaleHandle); _scaleHandle = null; }
     }
 

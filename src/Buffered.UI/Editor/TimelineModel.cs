@@ -4,8 +4,8 @@ using System.Text.Json.Serialization;
 
 namespace Buffered.UI;
 
-public enum ItemKind { Video, Audio, Image, Text }
-public enum TrackKind { Video, Audio, Text }
+public enum ItemKind { Video, Audio, Image, Text, Effect }
+public enum TrackKind { Video, Audio, Text, Effect }
 
 /// <summary>
 /// What every kind of item shares, so a new kind of item (an image, a line of text, a sound file) is an addition and not a rewrite. Fades are in seconds.
@@ -13,7 +13,7 @@ public enum TrackKind { Video, Audio, Text }
 /// </summary>
 public sealed record ItemProps(double Opacity = 1, double Volume = 1, double FadeIn = 0, double FadeOut = 0, double Speed = 1, string? Text = null,
     double PosX = 0.5, double PosY = 0.5, double Scale = 1, double TextSize = 0.08, string Color = "#FFFFFF", ImmutableList<KeyTrack>? Keys = null, double Rotation = 0, double CropL = 0, double CropT = 0, double CropR = 0, double CropB = 0,
-    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null, double GifSpeed = 1)
+    string Font = "Segoe UI", bool Bold = true, bool Italic = false, double Outline = 0, string OutlineColor = "#000000", string? Box = null, double GifSpeed = 1, string? Effect = null, double Amount = 1)
 {
     /// <summary>The value a property has when it is not animated (the slider's value).</summary>
     public double Base(KeyProp p) => p switch { KeyProp.Opacity => Opacity, KeyProp.Volume => Volume, KeyProp.PosX => PosX, KeyProp.PosY => PosY, KeyProp.Speed => Speed, KeyProp.TextSize => TextSize, KeyProp.Rotation => Rotation, _ => Scale };
@@ -156,6 +156,26 @@ public sealed record TimelineItem(Guid Id, ItemKind Kind, string Source, double 
 }
 
 /// <param name="HeightScale">How tall the lane is drawn compared with the normal height (1 is normal); the user drags it.</param>
+/// <summary>The kinds of effect an effect-lane item can be (<see cref="ItemProps.Effect"/>).</summary>
+public static class Effects
+{
+    public const string DipBlack = "dip-black", DipWhite = "dip-white", Shake = "shake";
+    public static readonly (string Id, string Name)[] All = { (DipBlack, "Transition: dip to black"), (DipWhite, "Transition: dip to white"), (Shake, "Shake") };
+    public static string NameOf(string? id) => All.FirstOrDefault(e => e.Id == id).Name ?? "Effect";
+    public static bool IsTransition(string? id) => id is DipBlack or DipWhite;
+
+    /// <summary>
+    /// How strongly the effect shows at a moment <paramref name="t"/> seconds into an item <paramref name="length"/> seconds long, from 0 to 1.
+    /// A transition rises to its peak in the middle (the cut) and falls again; a shake starts at full strength and dies away.
+    /// </summary>
+    public static double Strength(string? id, double t, double length)
+    {
+        if (length <= 0 || t < 0 || t > length) return 0;
+        double u = t / length;
+        return IsTransition(id) ? 1 - Math.Abs(2 * u - 1) : 1 - u;
+    }
+}
+
 public sealed record Track(Guid Id, TrackKind Kind, string Name, ImmutableList<TimelineItem> Items, bool Locked = false, bool Muted = false, bool Hidden = false, double HeightScale = 1, bool Solo = false)
 {
     /// <summary>Whether this sound lane is heard: not muted, and if any lane is soloed, only soloed ones.</summary>
@@ -498,7 +518,7 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
         {
             Guid? link = item.LinkId is { } old ? (links.TryGetValue(old, out var made) ? made : links[old] = Guid.NewGuid()) : null;
             var copy = item with { Id = Guid.NewGuid(), Start = Math.Max(0, at + (item.Start - first)), LinkId = link };
-            var kind = item.Kind switch { ItemKind.Audio => TrackKind.Audio, ItemKind.Text => TrackKind.Text, _ => TrackKind.Video };
+            var kind = item.Kind switch { ItemKind.Audio => TrackKind.Audio, ItemKind.Text => TrackKind.Text, ItemKind.Effect => TrackKind.Effect, _ => TrackKind.Video };
             var order = new List<int>();
             if (track >= 0 && track < p.Tracks.Count && p.Tracks[track].Kind == kind) order.Add(track);
             order.AddRange(Enumerable.Range(0, p.Tracks.Count).Where(i => p.Tracks[i].Kind == kind));
@@ -506,7 +526,7 @@ public sealed record Project(ImmutableList<Track> Tracks, ImmutableList<double>?
             foreach (var i in order.Distinct()) { placed = p.Add(i, copy); if (placed is not null) break; }
             if (placed is null)
             {
-                var grown = p.AddTrack(kind, kind == TrackKind.Audio ? "Sound" : kind == TrackKind.Text ? "Text" : "Video");
+                var grown = p.AddTrack(kind, kind == TrackKind.Audio ? "Sound" : kind == TrackKind.Text ? "Text" : kind == TrackKind.Effect ? "Effects" : "Video");
                 placed = grown.Add(kind == TrackKind.Audio ? grown.Tracks.Count - 1 : 0, copy);
             }
             if (placed is null) continue;

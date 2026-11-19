@@ -13,6 +13,9 @@ public sealed record ExportOptions(int Width, int Height, int Fps, int Cq, int C
 /// </summary>
 public static class ExportGraph
 {
+    /// <summary>How far a shake moves the picture (a share of the frame) and how much it zooms in to hide the edges, at full strength. The editor's preview uses the same numbers.</summary>
+    public const double ShakeSideShare = 0.02, ShakeZoomShare = 0.05;
+
     /// <summary>The filters this command needs; an ffmpeg without them cannot make the export.</summary>
     public static readonly string[] RequiredFilters =
     {
@@ -36,7 +39,7 @@ public static class ExportGraph
 
         // lanes at the top of the list are drawn last (on top)
         foreach (var track in p.Tracks.Reverse().Where(t => t.Kind != TrackKind.Audio && !t.Hidden))
-            foreach (var it in track.Items.OrderBy(i => i.Start))
+            foreach (var it in track.Items.Where(i => i.Kind != ItemKind.Effect).OrderBy(i => i.Start))
             {
                 double len = it.Length;
                 string tag = $"v{layer++}";
@@ -78,6 +81,30 @@ public static class ExportGraph
                 last = $"o{layer}";
                 index++;
             }
+        // effects act on everything drawn so far, one after another in the order they start
+        foreach (var fx in p.Tracks.Where(t => t.Kind == TrackKind.Effect && !t.Hidden).SelectMany(t => t.Items).OrderBy(i => i.Start))
+        {
+            double s0 = fx.Start, d = Math.Max(0.05, fx.Length);
+            string tag = $"fx{layer++}";
+            if (Effects.IsTransition(fx.Props.Effect))
+            {
+                // a sheet of black (or white) that fades in to the middle of the effect and out again, laid over the picture
+                string c = fx.Props.Effect == Effects.DipWhite ? "white" : "black";
+                graph.Append($"color=c={c}:s={o.Width}x{o.Height}:r={o.Fps}:d={N(d)},format=rgba,fade=t=in:st=0:d={N(d / 2)}:alpha=1,fade=t=out:st={N(d / 2)}:d={N(d / 2)}:alpha=1,setpts=PTS+{N(s0)}/TB[{tag}];");
+                graph.Append($"[{last}][{tag}]overlay=eof_action=pass:format=auto[o{layer}];");
+            }
+            else
+            {
+                // a shake: a copy of the picture, zoomed in a little and moved about, shown over the picture while the effect lasts. Both die away as it goes on.
+                string env = $"max(0,1-(t-{N(s0)})/{N(d)})";
+                double amt = Math.Max(0.1, fx.Props.Amount);
+                graph.Append($"[{last}]split[s{tag}][b{tag}];");
+                graph.Append($"[b{tag}]scale=w='trunc(iw*(1+{N(ShakeZoomShare * amt)}*{env})/2)*2':h='trunc(ih*(1+{N(ShakeZoomShare * amt)}*{env})/2)*2':eval=frame,");
+                graph.Append($"crop=w={o.Width}:h={o.Height}:x='(iw-ow)/2+{N(ShakeSideShare * o.Width * amt)}*sin(2*PI*17*(t-{N(s0)}))*{env}':y='(ih-oh)/2+{N(ShakeSideShare * o.Height * amt)}*cos(2*PI*23*(t-{N(s0)}))*{env}'[h{tag}];");
+                graph.Append($"[s{tag}][h{tag}]overlay=enable='between(t,{N(s0)},{N(s0 + d)})':eof_action=pass:format=auto[o{layer}];");
+            }
+            last = $"o{layer}";
+        }
         graph.Append($"[{last}]format=yuv420p[vout]");
 
         // sound
@@ -227,7 +254,8 @@ public static class ExportGraph
         var picture = p.Items.Where(i => i.Kind != ItemKind.Audio).ToList();
         if (picture.Any(i => i.Props.HasKeys(KeyProp.Opacity))) yield return "sendcmd";
         if (picture.Any(i => i.Props.HasKeys(KeyProp.Rotation) || Math.Abs(i.Props.Rotation) > 0.01)) yield return "rotate";
-        if (picture.Any(i => i.Kind != ItemKind.Text && i.Props.HasCrop)) yield return "crop";
+        if (picture.Any(i => i.Kind is ItemKind.Video or ItemKind.Image && i.Props.HasCrop)) yield return "crop";
+        if (p.Items.Any(i => i.Kind == ItemKind.Effect && i.Props.Effect == Effects.Shake)) { yield return "split"; yield return "crop"; }
     }
 
     /// <summary>The fade in and fade out of an item on its alpha channel (picture items).</summary>

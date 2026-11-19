@@ -74,7 +74,7 @@ public sealed class TimelineView : FrameworkElement
     public event Action? ViewChanged;                    // zoom or scroll changed
     public enum LaneFlag { Lock, Mute, Solo }
     public event Action<int, LaneFlag>? LaneFlagToggled;   // the lock or the eye / speaker in a lane's header was clicked
-    public event Action<int>? RemoveLaneRequested;          // right click on a header
+    public event Action<int>? LaneMenuRequested;            // right click on the lane names: the lane under the mouse, or -1 for empty space below the lanes
     public event Action<Guid>? ItemMenuRequested;           // right click on an item
 
     /// <summary>A block shown where something is still being brought in (a large clip takes a moment), so the drop is seen at once.</summary>
@@ -126,6 +126,7 @@ public sealed class TimelineView : FrameworkElement
         Frozen(Color.FromRgb(0x2E, 0x8B, 0x6A)),   // audio
         Frozen(Color.FromRgb(0x9A, 0x5B, 0xB8)),   // image
         Frozen(Color.FromRgb(0xC0, 0x7A, 0x2C)),   // text
+        Frozen(Color.FromRgb(0x7A, 0x5A, 0xC0)),   // effect
     };
     private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
@@ -194,7 +195,7 @@ public sealed class TimelineView : FrameworkElement
 
                 if (r.Width > 36)
                 {
-                    string label = it.Kind == ItemKind.Text ? (it.Props.Text ?? "Text").Replace('\n', ' ') : it.Label ?? System.IO.Path.GetFileNameWithoutExtension(it.Source);
+                    string label = it.Kind == ItemKind.Effect ? Effects.NameOf(it.Props.Effect) : it.Kind == ItemKind.Text ? (it.Props.Text ?? "Text").Replace('\n', ' ') : it.Label ?? System.IO.Path.GetFileNameWithoutExtension(it.Source);
                     var ft = Fmt(label, 11.5 * F, Brushes.White);
                     ft.MaxTextWidth = Math.Max(1, r.Width - 12); ft.MaxLineCount = 1; ft.Trimming = TextTrimming.CharacterEllipsis;
                     if (it.Kind == ItemKind.Video && Thumbs.ContainsKey(it.Source)) dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), null, new Rect(r.X + 3, top + 4 * F, Math.Min(r.Width - 6, ft.WidthIncludingTrailingWhitespace + 8), ft.Height + 2), 3, 3);
@@ -290,7 +291,7 @@ public sealed class TimelineView : FrameworkElement
             var nm = Fmt(tr.Name, 12 * F, text); nm.MaxTextWidth = Math.Max(20, HeaderWidth - (tr.Kind == TrackKind.Audio ? 96 : 66) * F); nm.MaxLineCount = 1; nm.Trimming = TextTrimming.CharacterEllipsis;
             bool roomy = lh >= 34 * F;   // a short lane shows just its name, in the middle
             dc.DrawText(nm, new Point(10, roomy ? top + 3 * F : top + (lh - nm.Height) / 2));
-            if (roomy) dc.DrawText(Fmt(tr.Kind == TrackKind.Audio ? "sound" : tr.Kind == TrackKind.Text ? "text" : "picture", 10 * F, dim), new Point(10, top + 20 * F));
+            if (roomy) dc.DrawText(Fmt(tr.Kind == TrackKind.Audio ? "sound" : tr.Kind == TrackKind.Text ? "text" : tr.Kind == TrackKind.Effect ? "effects" : "picture", 10 * F, dim), new Point(10, top + 20 * F));
             var lockText = new FormattedText(tr.Locked ? "" : "", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 13 * F, tr.Locked ? text : dim, dpi);
             double iconTop = top + lh / 2 - 9 * F;
             dc.DrawText(lockText, new Point(HeaderWidth - 26 * F, iconTop));
@@ -568,7 +569,7 @@ public sealed class TimelineView : FrameworkElement
             ItemMenuRequested?.Invoke(rightHit.id);
             return;
         }
-        if (e.ChangedButton == MouseButton.Right && p.X < HeaderWidth) { int l = LaneAt(p.Y); if (l >= 0 && l < _project.Tracks.Count) RemoveLaneRequested?.Invoke(l); return; }
+        if (e.ChangedButton == MouseButton.Right && p.X < HeaderWidth) { int l = LaneAt(p.Y); LaneMenuRequested?.Invoke(l >= 0 && l < _project.Tracks.Count ? l : -1); return; }
         if (e.ChangedButton == MouseButton.Left && p.X < HeaderWidth && EdgeBelowLane(p) is { } edgeLane)
         {
             _resizeLane = edgeLane; _resizeFromY = p.Y; _resizeFromScale = _project.Tracks[edgeLane].HeightScale; _dragBase = _project; _dragChanged = false; _drag = Drag.ResizeLane; CaptureMouse();
@@ -737,7 +738,7 @@ public sealed class TimelineView : FrameworkElement
         InvalidateVisual();
     }
 
-    private static double SourceLength(TimelineItem item) => item.Kind is ItemKind.Image or ItemKind.Text ? double.PositiveInfinity : SourceLengths.TryGetValue(item.Source, out var l) ? l : double.PositiveInfinity;
+    private static double SourceLength(TimelineItem item) => item.Kind is ItemKind.Image or ItemKind.Text or ItemKind.Effect ? double.PositiveInfinity : SourceLengths.TryGetValue(item.Source, out var l) ? l : double.PositiveInfinity;
 
     /// <summary>How long each source file is, so a trim cannot reveal footage that does not exist. Filled in by the editor.</summary>
     public static readonly Dictionary<string, double> SourceLengths = new(StringComparer.OrdinalIgnoreCase);

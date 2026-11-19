@@ -57,6 +57,7 @@ public partial class AdvancedEditor : UserControl
         InitMedia();
         InitProject();
         InitMore();
+        InitEffects();
         Tl.Changing += p => { Tl.Project = p; PushLanesOf(p); Sync(false); };
         Tl.Committed += p => { _h.Apply(Magnetic(p)); AfterEdit(); };
         Tl.CutMade += p => { _h.Apply(p); AfterEdit(); };
@@ -67,14 +68,18 @@ public partial class AdvancedEditor : UserControl
                 : tr.Kind == TrackKind.Audio ? tr with { Muted = !tr.Muted } : tr with { Hidden = !tr.Hidden }));
             AfterEdit();
         };
-        Tl.RemoveLaneRequested += lane =>
+        Tl.LaneMenuRequested += lane =>
         {
-            var p = _h.Current;
-            if (!p.Tracks[lane].Items.IsEmpty) { StatusText.Text = "Only an empty lane can be removed"; return; }
             var menu = new ContextMenu();
-            var remove = new MenuItem { Header = $"Remove the {p.Tracks[lane].Name} lane" };
-            remove.Click += (_, _) => { _h.Apply(_h.Current.RemoveTrack(lane)); AfterEdit(); };
-            menu.Items.Add(remove);
+            AddLaneItems(menu);
+            if (lane >= 0 && lane < _h.Current.Tracks.Count)
+            {
+                var track = _h.Current.Tracks[lane];
+                menu.Items.Add(new Separator());
+                var remove = new MenuItem { Header = $"Remove the {track.Name} lane", IsEnabled = track.Items.IsEmpty, ToolTip = track.Items.IsEmpty ? null : "Only an empty lane can be removed" };
+                remove.Click += (_, _) => { _h.Apply(_h.Current.RemoveTrack(lane)); AfterEdit(); };
+                menu.Items.Add(remove);
+            }
             menu.IsOpen = true;
         };
         Tl.ItemMenuRequested += id => ShowItemMenu();
@@ -368,7 +373,7 @@ public partial class AdvancedEditor : UserControl
     {
         var p = _h.Current;
         var it = _selected is { } sid ? p.Find(sid) : p.Items.FirstOrDefault(i => i.Kind == ItemKind.Video && _t >= i.Start && _t < i.End);
-        if (it is null || it.Kind == ItemKind.Audio || _t < it.Start || _t >= it.End) { StatusText.Text = "Put the playhead on a video, picture or text first"; return; }
+        if (it is null || it.Kind is ItemKind.Audio or ItemKind.Effect || _t < it.Start || _t >= it.End) { StatusText.Text = "Put the playhead on a video, picture or text first"; return; }
         _h.Apply(shake ? p.Shake(it.Id, _t) : p.PunchIn(it.Id, _t));
         AfterEdit();
         StatusText.Text = shake ? "Shake added at the playhead (X)" : "Punch-in added at the playhead (P)";
@@ -415,7 +420,7 @@ public partial class AdvancedEditor : UserControl
     }
 
     private void Punch_Click(object sender, RoutedEventArgs e) => AddEffect(false);
-    private void Shake_Click(object sender, RoutedEventArgs e) => AddEffect(true);
+    private void Shake_Click(object sender, RoutedEventArgs e) => AddEffectItem(Effects.Shake, _t, 0.5);
 
     /// <summary>Makes the selected video or picture small and puts it in a corner (or the middle) of the frame, like a facecam.</summary>
     private void Layout_Click(object sender, RoutedEventArgs e)
@@ -592,9 +597,10 @@ public partial class AdvancedEditor : UserControl
 
     private void Transition_Click(object sender, RoutedEventArgs e)
     {
-        if (CutTime() is not { } at) { StatusText.Text = "Select an item at the cut first"; return; }
+        double at = CutTime() ?? _t;
         var menu = new ContextMenu { PlacementTarget = TransitionButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Top };
         void Add(string text, double seconds) { var m = new MenuItem { Header = text }; m.Click += (_, _) => { _h.Apply(_h.Current.TransitionAt(at, seconds)); AfterEdit(); }; menu.Items.Add(m); }
+        void Dip(string text, string type, double seconds) { var m = new MenuItem { Header = text }; m.Click += (_, _) => AddTransition(type, seconds); menu.Items.Add(m); }
         void Dissolve(string text, double seconds)
         {
             var m = new MenuItem { Header = text };
@@ -606,25 +612,38 @@ public partial class AdvancedEditor : UserControl
             };
             menu.Items.Add(m);
         }
-        Dissolve("Cross-dissolve, quick (0.5 s)", 0.5);
-        Dissolve("Cross-dissolve, smooth (1 s)", 1.0);
+        Dip("Dip to black, quick (0.5 s)", Effects.DipBlack, 0.5);
+        Dip("Dip to black, smooth (1 s)", Effects.DipBlack, 1.0);
+        Dip("Dip to black, slow (2 s)", Effects.DipBlack, 2.0);
+        Dip("Dip to white, quick (0.5 s)", Effects.DipWhite, 0.5);
+        Dip("Dip to white, smooth (1 s)", Effects.DipWhite, 1.0);
         menu.Items.Add(new Separator());
-        Add("Dip through black, quick (0.3 s)", 0.3);
-        Add("Dip through black, smooth (0.6 s)", 0.6);
-        Add("Dip through black, slow (1 s)", 1.0);
+        Dissolve("Cross-dissolve (moves the next clip earlier), quick (0.5 s)", 0.5);
+        Dissolve("Cross-dissolve (moves the next clip earlier), smooth (1 s)", 1.0);
         menu.Items.Add(new Separator());
         Add("Remove the fades at this cut", 0);
         menu.IsOpen = true;
     }
 
+    /// <summary>The "add a lane" choices, for the Add lane button and for a right click on the lane names.</summary>
+    private void AddLaneItems(ItemsControl menu)
+    {
+        void Add(string header, TrackKind kind, string name)
+        {
+            var m = new MenuItem { Header = header };
+            m.Click += (_, _) => { var p = _h.Current; _h.Apply(p.AddTrack(kind, $"{name} {p.Tracks.Count(t => t.Kind == kind) + 1}")); AfterEdit(); };
+            menu.Items.Add(m);
+        }
+        Add("Add a picture lane (above the others)", TrackKind.Video, "Video");
+        Add("Add a text lane", TrackKind.Text, "Text");
+        Add("Add an effect lane (transitions, shake)", TrackKind.Effect, "Effects");
+        Add("Add a sound lane", TrackKind.Audio, "Sound");
+    }
+
     private void AddLane_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
-        var pic = new MenuItem { Header = "Picture lane (above the others)" };
-        pic.Click += (_, _) => { var p = _h.Current; _h.Apply(p.AddTrack(TrackKind.Video, "Video " + (p.Tracks.Count(t => t.Kind != TrackKind.Audio) + 1))); AfterEdit(); };
-        var snd = new MenuItem { Header = "Sound lane" };
-        snd.Click += (_, _) => { var p = _h.Current; _h.Apply(p.AddTrack(TrackKind.Audio, "Sound " + (p.Tracks.Count(t => t.Kind == TrackKind.Audio) + 1))); AfterEdit(); };
-        menu.Items.Add(pic); menu.Items.Add(snd);
+        AddLaneItems(menu);
         menu.PlacementTarget = (UIElement)sender; menu.IsOpen = true;
     }
 
@@ -674,9 +693,12 @@ public partial class AdvancedEditor : UserControl
         UnlinkButton.IsEnabled = it?.LinkId is not null;
         LinkButton.IsEnabled = CanLink(_h.Current, Tl.Selection.ToList());
         if (it is null) { PropsTitle.Text = "Nothing selected"; PropsHint.Visibility = Visibility.Visible; PropsBody.Visibility = Visibility.Collapsed; return; }
-        PropsTitle.Text = it.Kind == ItemKind.Text ? "Text" : it.Label ?? Path.GetFileNameWithoutExtension(it.Source);
+        PropsTitle.Text = it.Kind == ItemKind.Effect ? Effects.NameOf(it.Props.Effect) : it.Kind == ItemKind.Text ? "Text" : it.Label ?? Path.GetFileNameWithoutExtension(it.Source);
         PropsHint.Visibility = Visibility.Collapsed; PropsBody.Visibility = Visibility.Visible;
-        bool picture = it.Kind != ItemKind.Audio, overlay = it.Kind is ItemKind.Text or ItemKind.Image, timed = it.Kind is ItemKind.Video or ItemKind.Audio;
+        bool effect = it.Kind == ItemKind.Effect;
+        Vis(effect, EffectPanel);
+        Vis(!effect, FadeInRow, FadeInSlider, FadeOutRow, FadeOutSlider);
+        bool picture = it.Kind is ItemKind.Video or ItemKind.Image or ItemKind.Text, overlay = it.Kind is ItemKind.Text or ItemKind.Image, timed = it.Kind is ItemKind.Video or ItemKind.Audio;
         Vis(picture, OpacityRow, OpacitySlider);
         Vis(it.Kind == ItemKind.Audio, VolumeRow, VolumeSlider, BeatButton);
         bool gif = it.Kind == ItemKind.Image && GifAnimation.IsGif(it.Source);
@@ -693,6 +715,7 @@ public partial class AdvancedEditor : UserControl
             double maxFade = Math.Max(0.1, Math.Min(10, it.Length));
             FadeInSlider.Maximum = FadeOutSlider.Maximum = maxFade;
             double at = _t - it.Start;
+            if (effect) ShowEffectProps(it);
             OpacitySlider.Value = it.Props.ValueAt(KeyProp.Opacity, at) * 100;
             VolumeSlider.Value = it.Props.ValueAt(KeyProp.Volume, at) * 100;
             FadeInSlider.Value = it.Fades.In; FadeOutSlider.Value = it.Fades.Out;
@@ -790,7 +813,7 @@ public partial class AdvancedEditor : UserControl
             case Key.E when ctrl: _ = ExportAsync(); break;
             case Key.Delete: DeleteSelected(shift); break;
             case Key.P when !ctrl: AddEffect(false); break;
-            case Key.X when !ctrl: AddEffect(true); break;
+            case Key.X when !ctrl: AddEffectItem(Effects.Shake, _t, 0.5); break;
             case Key.A when ctrl: Tl.SetSelection(_h.Current.Items.Select(i => i.Id)); _selected = Tl.Selected; ShowProps(); break;
             case Key.Z when ctrl: _h.Undo(); AfterEdit(); break;
             case Key.Y when ctrl: _h.Redo(); AfterEdit(); break;
