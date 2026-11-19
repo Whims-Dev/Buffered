@@ -330,7 +330,8 @@ public partial class AdvancedEditor : UserControl
             {
                 // a jump while playing: the picture is paused first, so it keeps showing what it had and then goes straight to the new picture,
                 // instead of playing through every picture on the way to it (which flashed old pictures and lagged)
-                if (_playing && seek) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; _seekHold = true; }
+                // (the same when scrubbing while paused: the picture used to be told to jump while it was still playing from the last jump, which showed black between jumps)
+                if (seek && _videoPlaying) { try { Video.Pause(); } catch (InvalidOperationException) { } _videoPlaying = false; _seekHold = _playing; }
                 try { Video.Position = TimeSpan.FromSeconds(expected); } catch (InvalidOperationException) { }
                 if (_playing) BeginWait(expected);
             }
